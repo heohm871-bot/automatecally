@@ -1,0 +1,185 @@
+name: Functions E2E Once
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  indexes-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install root deps
+        run: npm ci
+
+      - name: Install functions deps
+        run: npm ci --prefix functions
+
+      - name: Validate Firestore indexes (fail-fast)
+        run: INFRA_ENV=staging npm run indexes:check --prefix functions
+
+  functions-e2e-once:
+    needs: indexes-check
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install root deps
+        run: npm ci
+
+      - name: Install functions deps
+        run: npm ci --prefix functions
+
+      - name: Run E2E once (Firestore emulator)
+        run: |
+          set -o pipefail
+          npx firebase-tools emulators:exec --only firestore --project demo-e2e \
+            "bash -lc 'npm run e2e:check:timeout --prefix functions || (DUMP_INCLUDE_ARTICLE_HISTORY_ONLY=1 npm run e2e:dump --prefix functions && exit 1)'" | tee /tmp/functions-e2e.log
+
+      - name: Upload E2E Log (always)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: functions-e2e-log
+          path: /tmp/functions-e2e.log
+
+      - name: Upload E2E Dumps (always)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: functions-e2e-dumps
+          path: functions/.artifacts
+
+      - name: Print E2E Failure Summary
+        if: failure()
+        run: |
+          node -e "
+          const fs=require('fs');
+          const p='functions/.artifacts/e2eRuns.json';
+          if(!fs.existsSync(p)){console.log('no e2eRuns.json'); process.exit(0);}
+          const data=JSON.parse(fs.readFileSync(p,'utf8'));
+          if(!Array.isArray(data)||data.length===0){console.log('e2eRuns empty'); process.exit(0);}
+          const latest=data[data.length-1];
+          const topSteps = Array.isArray(latest.stepStats)
+            ? [...latest.stepStats].sort((a,b)=>(Number(b.durationMs||0)-Number(a.durationMs||0))).slice(0,3)
+            : [];
+          let failedTaskCount = 0;
+          let failedTaskTypes = [];
+          try {
+            const tr='functions/.artifacts/taskRuns.json';
+            if (fs.existsSync(tr)) {
+              const runs=JSON.parse(fs.readFileSync(tr,'utf8'));
+              const rows = Array.isArray(runs) ? runs : [];
+              const scoped = rows.filter(r => !latest.traceId || r.traceId === latest.traceId);
+              const failed = scoped.filter(r => r && r.status === 'failed');
+              failedTaskCount = failed.length;
+              const freq = new Map();
+              for (const row of failed) {
+                const key = typeof row.taskType === 'string' ? row.taskType : 'unknown';
+                freq.set(key, (freq.get(key) || 0) + 1);
+              }
+              failedTaskTypes = Array.from(freq.entries())
+                .map(([taskType, count]) => ({ taskType, count }))
+                .sort((a,b)=>b.count-a.count)
+                .slice(0,3);
+            }
+          } catch (_) {}
+          let retryEnqueuedCount = 0;
+          try {
+            const ah='functions/.artifacts/articleHistory.json';
+            if (fs.existsSync(ah)) {
+              const hist=JSON.parse(fs.readFileSync(ah,'utf8'));
+              const rows = Array.isArray(hist) ? hist : [];
+              const siteRows = rows.filter(r => !latest.siteId || r.siteId === latest.siteId);
+              for (const row of siteRows) {
+                const events = Array.isArray(row.pipelineHistory) ? row.pipelineHistory : [];
+                for (const ev of events) {
+                  if (ev && ev.eventType === 'retry_enqueued') retryEnqueuedCount++;
+                }
+              }
+            }
+          } catch (_) {}
+          console.log('LATEST_E2E_RUN');
+          console.log(JSON.stringify({
+            runId: latest.runId ?? null,
+            ok: latest.ok ?? null,
+            code: latest.code ?? null,
+            message: latest.message ?? null,
+            siteId: latest.siteId ?? null,
+            articleId: latest.articleId ?? null,
+            topStepStats: topSteps,
+            failedTaskCount,
+            failedTaskTypes,
+            retryEnqueuedCount
+          }, null, 2));
+          "
+
+      - name: Send E2E Failure Webhook (optional)
+        if: failure() && env.E2E_FAILURE_WEBHOOK_URL != ''
+        env:
+          E2E_FAILURE_WEBHOOK_URL: ${{ secrets.E2E_FAILURE_WEBHOOK_URL }}
+        run: |
+          node -e "
+          const fs=require('fs');
+          const p='functions/.artifacts/e2eRuns.json';
+          if(!fs.existsSync(p)){process.exit(0);}
+          const data=JSON.parse(fs.readFileSync(p,'utf8'));
+          if(!Array.isArray(data)||data.length===0){process.exit(0);}
+          const latest=data[data.length-1];
+          let failedTaskCount = 0;
+          let failedTaskTypes = [];
+          try {
+            const tr='functions/.artifacts/taskRuns.json';
+            if (fs.existsSync(tr)) {
+              const runs=JSON.parse(fs.readFileSync(tr,'utf8'));
+              const rows = Array.isArray(runs) ? runs : [];
+              const scoped = rows.filter(r => !latest.traceId || r.traceId === latest.traceId);
+              const failed = scoped.filter(r => r && r.status === 'failed');
+              failedTaskCount = failed.length;
+              const freq = new Map();
+              for (const row of failed) {
+                const key = typeof row.taskType === 'string' ? row.taskType : 'unknown';
+                freq.set(key, (freq.get(key) || 0) + 1);
+              }
+              failedTaskTypes = Array.from(freq.entries())
+                .map(([taskType, count]) => ({ taskType, count }))
+                .sort((a,b)=>b.count-a.count)
+                .slice(0,3);
+            }
+          } catch (_) {}
+          const payload = {
+            text: '[functions-e2e-once] failure summary',
+            summary: {
+              runId: latest.runId ?? null,
+              ok: latest.ok ?? null,
+              code: latest.code ?? null,
+              message: latest.message ?? null,
+              siteId: latest.siteId ?? null,
+              articleId: latest.articleId ?? null,
+              failedTaskCount,
+              failedTaskTypes
+            }
+          };
+          fs.writeFileSync('/tmp/e2e-failure-summary.json', JSON.stringify(payload));
+          "
+          curl -sS -X POST "$E2E_FAILURE_WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            --data-binary "@/tmp/e2e-failure-summary.json" >/dev/null

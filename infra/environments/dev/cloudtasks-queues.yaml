@@ -1,0 +1,14 @@
+queue:
+  - name: heavy-queue
+    rateLimits:
+      maxDispatchesPerSecond: 0.2
+      maxConcurrentDispatches: 1
+    retryConfig:
+      maxAttempts: 1
+
+  - name: light-queue
+    rateLimits:
+      maxDispatchesPerSecond: 2
+      maxConcurrentDispatches: 5
+    retryConfig:
+      maxAttempts: 1
