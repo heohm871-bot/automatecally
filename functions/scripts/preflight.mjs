@@ -5,9 +5,10 @@ import net from "node:net";
 import path from "node:path";
 
 function parseArgs(argv) {
-  const out = { mode: "default" };
+  const out = { mode: "default", requirePixabay: false };
   for (const item of argv) {
     if (item.startsWith("--mode=")) out.mode = item.slice("--mode=".length);
+    if (item === "--require-pixabay") out.requirePixabay = true;
   }
   return out;
 }
@@ -77,6 +78,10 @@ async function run() {
   const errors = [];
   const warnings = [];
   const checks = [];
+  const requirePixabay =
+    args.requirePixabay ||
+    String(env.PREFLIGHT_REQUIRE_PIXABAY ?? "").trim() === "1" ||
+    String(env.PREFLIGHT_REQUIRE_PIXABAY ?? "").toLowerCase().trim() === "true";
 
   const requireValue = (key, label = key) => {
     const value = env[key];
@@ -121,8 +126,13 @@ async function run() {
 
   const pixabay = String(env.PIXABAY_API_KEY ?? "").trim();
   if (!pixabay) {
-    warnings.push("PIXABAY_API_KEY missing (image_generate will skip external image fetch)");
-    checks.push({ check: "PIXABAY_API_KEY", ok: true, value: "optional-missing" });
+    if (requirePixabay) {
+      errors.push("PIXABAY_API_KEY missing (required by preflight policy)");
+      checks.push({ check: "PIXABAY_API_KEY", ok: false, value: "required-missing" });
+    } else {
+      warnings.push("PIXABAY_API_KEY missing (image_generate will skip external image fetch)");
+      checks.push({ check: "PIXABAY_API_KEY", ok: true, value: "optional-missing" });
+    }
   } else {
     checks.push({ check: "PIXABAY_API_KEY", ok: true, value: "set" });
   }
@@ -141,6 +151,7 @@ async function run() {
   const result = {
     ok: errors.length === 0,
     mode: args.mode,
+    policy: { requirePixabay },
     errors,
     warnings,
     checks

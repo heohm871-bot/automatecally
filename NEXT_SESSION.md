@@ -151,3 +151,25 @@
 - `cd functions && npm run build && npm test` 통과
 - `firebase-tools emulators:exec --only firestore ... "cd functions && npm run sites:seed && npm run sites:verify"` 통과
 - `firebase-tools emulators:exec --only firestore ... "cd functions && npm run analyzer:smoke"` 통과
+
+---
+
+## 2026-02-11 (세션 업데이트 5)
+
+### 추가 진행 내용
+- `articles` trace 정렬 UX 마무리
+  - 파일: `apps/web/src/app/articles/page.tsx`
+  - 기능: trace 정렬 토글 추가 (`최신순` / `오래된순`)
+  - 정렬 기준: `trace[].at` timestamp
+
+- `preflight` 필수키 정책 확장
+  - 파일: `functions/scripts/preflight.mjs`
+  - 추가: `--require-pixabay` 플래그
+  - 추가: `PREFLIGHT_REQUIRE_PIXABAY=1|true` 환경변수 정책
+  - 결과: 기본 모드에서는 warning, 필수 모드에서는 error 로 동작 분기
+
+### 검증
+- `cd apps/web && npm run build` 통과
+- `cd functions && TASKS_EXECUTE_INLINE=1 TASK_SECRET=dev-secret npm run preflight -- --mode=default` 통과
+- `cd functions && TASKS_EXECUTE_INLINE=1 FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 TASK_SECRET=dev-secret npm run preflight -- --mode=e2e --require-pixabay`
+  - 의도대로 실패 확인 (픽사베이 키 누락 + 에뮬레이터 포트 미기동)

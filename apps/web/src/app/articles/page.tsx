@@ -52,6 +52,7 @@ export default function ArticlesPage() {
   const [selectedSiteId, setSelectedSiteId] = useState("");
   const [articles, setArticles] = useState<ArticleRow[]>([]);
   const [selectedArticleId, setSelectedArticleId] = useState("");
+  const [traceOrder, setTraceOrder] = useState<"desc" | "asc">("desc");
 
   useEffect(() => {
     const db = getFirebaseDb();
@@ -84,7 +85,14 @@ export default function ArticlesPage() {
   }, [user, selectedSiteId, selectedArticleId]);
 
   const selected = articles.find((a) => a.id === selectedArticleId) ?? null;
-  const selectedTrace = selected ? (selected.trace?.length ? selected.trace : selected.pipelineHistory ?? []) : [];
+  const selectedTraceRaw = selected ? (selected.trace?.length ? selected.trace : selected.pipelineHistory ?? []) : [];
+  const selectedTrace = [...selectedTraceRaw].sort((a, b) => {
+    const aMs = Date.parse(a.at ?? "");
+    const bMs = Date.parse(b.at ?? "");
+    const av = Number.isNaN(aMs) ? 0 : aMs;
+    const bv = Number.isNaN(bMs) ? 0 : bMs;
+    return traceOrder === "desc" ? bv - av : av - bv;
+  });
 
   function keywords3(article: ArticleRow) {
     const k = article.k12;
@@ -198,7 +206,25 @@ export default function ArticlesPage() {
                   </div>
 
                   <div>
-                    <p className="text-xs font-medium text-slate-700">trace</p>
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-medium text-slate-700">trace</p>
+                      <div className="flex gap-1">
+                        <button
+                          type="button"
+                          onClick={() => setTraceOrder("desc")}
+                          className={`rounded px-2 py-0.5 text-[11px] ${traceOrder === "desc" ? "bg-slate-200 text-slate-800" : "bg-slate-100 text-slate-600"}`}
+                        >
+                          최신순
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setTraceOrder("asc")}
+                          className={`rounded px-2 py-0.5 text-[11px] ${traceOrder === "asc" ? "bg-slate-200 text-slate-800" : "bg-slate-100 text-slate-600"}`}
+                        >
+                          오래된순
+                        </button>
+                      </div>
+                    </div>
                     <ul className="mt-1 max-h-[220px] overflow-auto rounded border border-slate-200">
                       {selectedTrace.map((t, idx) => (
                         <li key={`${t.at ?? "na"}-${idx}`} className="border-b border-slate-100 px-2 py-1 text-xs last:border-none">
