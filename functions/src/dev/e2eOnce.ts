@@ -109,6 +109,12 @@ async function run() {
     qaPass = article.qa?.pass ?? null;
     packagePath = article.packagePath ?? null;
 
+    if (status !== "packaged") {
+      throw new E2eError(
+        "E2E_STATUS_NOT_PACKAGED",
+        `E2E failed: expected articles/${articleId}.status to be packaged but got ${status ?? "null"}`
+      );
+    }
     if (!packagePath) {
       throw new E2eError("E2E_PACKAGE_MISSING", "E2E failed: packagePath missing");
     }

@@ -29,7 +29,8 @@ async function dumpArticleHistoryOnly(limit: number, siteId?: string) {
       pipelineLastTask: data.pipelineLastTask ?? null,
       pipelineLastStatus: data.pipelineLastStatus ?? null,
       pipelineUpdatedAt: data.pipelineUpdatedAt ?? null,
-      pipelineHistory: data.pipelineHistory ?? []
+      pipelineHistory: data.pipelineHistory ?? [],
+      trace: data.trace ?? []
     };
   });
 }

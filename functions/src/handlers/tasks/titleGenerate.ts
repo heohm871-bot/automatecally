@@ -81,6 +81,7 @@ export async function titleGenerate(payload: TitleGeneratePayload) {
   }
 
   const aRef = db().collection("articles").doc();
+  const nowIso = new Date().toISOString();
   await aRef.set({
     siteId,
     keywordId,
@@ -88,8 +89,18 @@ export async function titleGenerate(payload: TitleGeneratePayload) {
     titleCandidates: candidates,
     titleFinal: picked,
     titleSimMax: pickedSim,
-    status: "draft",
-    createdAt: new Date()
+    status: "queued",
+    createdAt: new Date(),
+    trace: [
+      {
+        task: "title_generate",
+        at: nowIso,
+        ok: true,
+        status: "success",
+        traceId: payload.traceId,
+        retryCount: payload.retryCount
+      }
+    ]
   });
 
   await enqueueTask({

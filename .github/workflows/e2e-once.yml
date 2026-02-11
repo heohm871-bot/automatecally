@@ -54,6 +54,11 @@ jobs:
       - name: Install functions deps
         run: npm ci --prefix functions
 
+      - name: Preflight check (independent)
+        run: |
+          npx firebase-tools emulators:exec --only firestore --project demo-e2e \
+            "bash -lc 'FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 TASKS_EXECUTE_INLINE=1 TASK_SECRET=ci-secret npm run preflight --prefix functions -- --mode=e2e'"
+
       - name: Run E2E once (Firestore emulator)
         run: |
           set -o pipefail

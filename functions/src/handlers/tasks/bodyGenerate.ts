@@ -25,6 +25,7 @@ export async function bodyGenerate(payload: BodyGeneratePayload) {
   const aSnap = await aRef.get();
   if (!aSnap.exists) throw new Error("article not found");
   const a = (aSnap.data() ?? {}) as ArticleDoc;
+  await aRef.set({ status: "generating" }, { merge: true });
 
   const kwSnap = await db().doc(`keywords/${a.keywordId}`).get();
   const kw = (kwSnap.data() ?? {}) as KeywordDoc;
@@ -104,7 +105,8 @@ ${detailBlock}
       imagePlan,
       topCardDraft: { labelsShort },
       hashtags12: a.hashtags12 ?? Array.from({ length: 12 }, (_, i) => `#tag${i + 1}`),
-      html
+      html,
+      status: "generating"
     },
     { merge: true }
   );

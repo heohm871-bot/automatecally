@@ -60,7 +60,7 @@ export async function articleQa(payload: ArticleQaPayload) {
   });
   const qa = applyQaOverride(qaBase);
 
-  await aRef.set({ qa, status: qa.pass ? "ready" : "draft" }, { merge: true });
+  await aRef.set({ qa, status: qa.pass ? "ready" : "qa_failed" }, { merge: true });
 
   if (!qa.pass) return;
 

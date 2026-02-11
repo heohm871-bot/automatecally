@@ -72,10 +72,11 @@ describe("recordTaskSnapshot", () => {
 
     expect(runSet).toHaveBeenCalledTimes(1);
     expect(articleSet).toHaveBeenCalledTimes(1);
-    expect(arrayUnion).toHaveBeenCalledTimes(1);
+    expect(arrayUnion).toHaveBeenCalledTimes(2);
 
     const [articlePayload] = articleSet.mock.calls[0] ?? [];
     expect(articlePayload.pipelineLastTask).toBe("article_package");
     expect(articlePayload.pipelineLastStatus).toBe("failed");
+    expect(articlePayload.trace).toBeDefined();
   });
 });

@@ -41,5 +41,5 @@ export async function articlePackage(payload: ArticlePackagePayload) {
     });
   }
 
-  await db().doc(`articles/${articleId}`).set({ packagePath: base }, { merge: true });
+  await db().doc(`articles/${articleId}`).set({ packagePath: base, status: "packaged" }, { merge: true });
 }
