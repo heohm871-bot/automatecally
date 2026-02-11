@@ -1,6 +1,7 @@
 import { db } from "../../lib/admin";
+import { getGlobalSettings } from "../../lib/globalSettings";
 import { enqueueTask } from "../../lib/tasks";
-import { GROWTH_V1, compRatio } from "../../../../packages/shared/scoringConfig";
+import { compRatio } from "../../../../packages/shared/scoringConfig";
 import type { TaskBase } from "../schema";
 
 type KeywordCandidate = {
@@ -25,7 +26,8 @@ export async function kwScore(payload: TaskBase) {
 
   if (snap.empty) return;
 
-  const cfg = GROWTH_V1;
+  const settings = await getGlobalSettings();
+  const cfg = settings.growth;
   const candidates: KeywordCandidate[] = snap.docs.map((d) => {
     const data = d.data() as Record<string, unknown>;
     return {

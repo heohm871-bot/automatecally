@@ -173,3 +173,57 @@
 - `cd functions && TASKS_EXECUTE_INLINE=1 TASK_SECRET=dev-secret npm run preflight -- --mode=default` 통과
 - `cd functions && TASKS_EXECUTE_INLINE=1 FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 TASK_SECRET=dev-secret npm run preflight -- --mode=e2e --require-pixabay`
   - 의도대로 실패 확인 (픽사베이 키 누락 + 에뮬레이터 포트 미기동)
+
+---
+
+## 2026-02-11 (세션 업데이트 6)
+
+### 이번에 진행한 순서
+1. `settings/global` 중앙 설정 적용
+2. 예약/수동 발행 모드 기반 필드 연결
+3. 준최2 자동 추천 로직(analyzer) 확장
+4. 이미지 메타/무료 fallback 보강
+
+### 반영 상세
+- 중앙 설정(11번)
+  - 추가: `functions/src/lib/globalSettings.ts`
+  - 적용 지점:
+    - `functions/src/index.ts`: enqueue jitter(120~300 기본) 전역 설정 참조
+    - `functions/src/handlers/taskRouter.ts`: retrySameDayMax/retryDelaySec 전역 설정 참조
+    - `functions/src/handlers/tasks/kwScore.ts`: growth 컷 전역 설정 참조
+  - 시드 스크립트 추가:
+    - `functions/src/dev/seedGlobalSettings.ts`
+    - `npm run settings:seed --prefix functions`
+
+- 예약/수동 발행 기반(8번 기반)
+  - `apps/web/src/app/sites/page.tsx`
+    - 필드 추가: `publishMode(scheduled/manual)`, `publishMinIntervalMin`
+  - `functions/src/handlers/tasks/articlePackage.ts`
+    - `publishPlan` 저장: `{ mode, minIntervalMin, scheduledAt }`
+
+- 준최2 자동 추천(9번 일부 구현)
+  - `functions/src/handlers/tasks/analyzerDaily.ts`
+    - `siteMetricsDaily/{siteId}_{runDate}`에 추천 정보 저장:
+      - `recommendations.midCompetitionIncreaseRecommended`
+      - `recommendations.targetMidCompetitionShare`
+      - `recommendations.reasons(recentHighPvCount, qaFailRate, titleSimAvg)`
+    - 클러스터 진도 저장:
+      - `clusters/{siteId}_{clusterId}`에 `postedCount`, `phase2EntryRecommended`
+
+- 이미지 전략 보강(7번 일부 구현)
+  - `functions/src/handlers/tasks/imageGenerate.ts`
+    - Pixabay 우선 + DuckDuckGo fallback 경로 연결
+    - 이미지 메타 저장 강화:
+      - `sourceUrl`, `pageUrl`, `licenseUrl`, `author`, `downloadedAt`, `slot`
+
+### 검증
+- `cd functions && npm run build && npm test` 통과
+- `firebase-tools emulators:exec --only firestore ... "cd functions && npm run settings:seed && npm run analyzer:smoke"` 통과
+  - `settings/global` 시드 확인
+  - `siteMetricsDaily/site-naver-life_2026-02-11` 문서 생성 및 추천 필드 확인
+- `cd apps/web && npm run build` 통과
+
+### 현재 남은 큰 항목
+1. 예약발행 실제 실행기(게시 API 연동/스케줄러) 구현
+2. DuckDuckGo fallback 실제 수집기(현재는 구조 연결, 소스 구현은 최소 상태)
+3. `settings/global` 값을 Web 콘솔에서 수정하는 Admin UI 추가

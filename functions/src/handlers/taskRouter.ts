@@ -1,4 +1,5 @@
 import { db } from "../lib/admin";
+import { getGlobalSettings } from "../lib/globalSettings";
 import { acquireLock, releaseLock } from "../lib/locks";
 import { recordArticlePipelineEvent, recordTaskSnapshot } from "../lib/pipelineTimeline";
 import { enqueueTask } from "../lib/tasks";
@@ -25,6 +26,7 @@ export async function routeTask(payload: AnyTaskPayload) {
   await acquireLock(payload.siteId, lockId, 10 * 60);
   const startedAt = Date.now();
   await recordTaskSnapshot(payload, "running");
+  const settings = await getGlobalSettings();
 
   try {
     if (payload.taskType === "kw_collect") await kwCollect(payload);
@@ -59,14 +61,14 @@ export async function routeTask(payload: AnyTaskPayload) {
       durationMs: Date.now() - startedAt
     });
 
-    if (payload.retryCount === 0) {
+    if (payload.retryCount < settings.pipeline.retrySameDayMax) {
       const retryQueue =
         payload.taskType === "body_generate" || payload.taskType === "image_generate" ? "heavy" : "light";
-      const retryDelaySec = 30 * 60;
+      const retryDelaySec = settings.pipeline.retryDelaySec;
       await enqueueTask({
         queue: retryQueue,
         scheduleTimeSecFromNow: retryDelaySec,
-        payload: { ...payload, retryCount: 1 }
+        payload: { ...payload, retryCount: (payload.retryCount + 1) as 0 | 1 }
       });
       await recordArticlePipelineEvent(payload, {
         type: "retry_enqueued",

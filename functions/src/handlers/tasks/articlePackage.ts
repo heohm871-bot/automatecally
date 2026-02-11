@@ -1,5 +1,6 @@
 import { bucket, db } from "../../lib/admin";
 import { isE2eSkipStorage } from "../../lib/e2eFlags";
+import { getGlobalSettings } from "../../lib/globalSettings";
 import type { ArticlePackagePayload } from "../schema";
 
 type ArticleDoc = {
@@ -12,6 +13,7 @@ type ArticleDoc = {
 
 export async function articlePackage(payload: ArticlePackagePayload) {
   const { siteId, articleId } = payload;
+  const settings = await getGlobalSettings();
 
   const aSnap = await db().doc(`articles/${articleId}`).get();
   if (!aSnap.exists) throw new Error("article not found");
@@ -28,6 +30,12 @@ export async function articlePackage(payload: ArticlePackagePayload) {
   };
 
   const base = `sites/${siteId}/articles/${articleId}/package`;
+  const siteSnap = await db().doc(`sites/${siteId}`).get();
+  const site = (siteSnap.data() ?? {}) as { publishMode?: "scheduled" | "manual"; publishMinIntervalMin?: number };
+  const publishMode = site.publishMode ?? settings.pipeline.publishDefault;
+  const publishMinIntervalMin = site.publishMinIntervalMin ?? settings.pipeline.publishMinIntervalMin;
+  const scheduledAtIso =
+    publishMode === "scheduled" ? new Date(Date.now() + publishMinIntervalMin * 60 * 1000).toISOString() : null;
 
   if (!isE2eSkipStorage()) {
     await bucket().file(`${base}/title.txt`).save(String(a.titleFinal ?? ""), { resumable: false });
@@ -41,5 +49,18 @@ export async function articlePackage(payload: ArticlePackagePayload) {
     });
   }
 
-  await db().doc(`articles/${articleId}`).set({ packagePath: base, status: "packaged" }, { merge: true });
+  await db()
+    .doc(`articles/${articleId}`)
+    .set(
+      {
+        packagePath: base,
+        status: "packaged",
+        publishPlan: {
+          mode: publishMode,
+          minIntervalMin: publishMinIntervalMin,
+          scheduledAt: scheduledAtIso
+        }
+      },
+      { merge: true }
+    );
 }

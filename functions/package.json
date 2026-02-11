@@ -12,6 +12,7 @@
     "e2e:seed": "npm run build && node lib/functions/src/dev/seedE2e.js",
     "sites:seed": "npm run build && node lib/functions/src/dev/seedSites.js",
     "sites:verify": "npm run build && node lib/functions/src/dev/verifySites.js",
+    "settings:seed": "npm run build && node lib/functions/src/dev/seedGlobalSettings.js",
     "analyzer:smoke": "npm run build && node lib/functions/src/dev/analyzerDailySmoke.js",
     "e2e:cleanup": "npm run build && node lib/functions/src/dev/cleanupE2e.js",
     "e2e:dump": "npm run build && node lib/functions/src/dev/dumpE2eData.js",

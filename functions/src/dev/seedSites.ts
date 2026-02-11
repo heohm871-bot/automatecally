@@ -9,6 +9,8 @@ type SeedSite = {
   isEnabled: boolean;
   dailyTarget: number;
   publishWindows: string[];
+  publishMode: "scheduled" | "manual";
+  publishMinIntervalMin: number;
 };
 
 const DEFAULT_SITES: SeedSite[] = [
@@ -20,7 +22,9 @@ const DEFAULT_SITES: SeedSite[] = [
     growthOverride: 0,
     isEnabled: true,
     dailyTarget: 3,
-    publishWindows: ["09:30", "13:30", "20:30"]
+    publishWindows: ["09:30", "13:30", "20:30"],
+    publishMode: "scheduled",
+    publishMinIntervalMin: 60
   },
   {
     siteId: "site-tistory-tech",
@@ -30,7 +34,9 @@ const DEFAULT_SITES: SeedSite[] = [
     growthOverride: 0.1,
     isEnabled: true,
     dailyTarget: 3,
-    publishWindows: ["08:40", "12:20", "19:50"]
+    publishWindows: ["08:40", "12:20", "19:50"],
+    publishMode: "scheduled",
+    publishMinIntervalMin: 60
   },
   {
     siteId: "site-naver-money",
@@ -40,7 +46,9 @@ const DEFAULT_SITES: SeedSite[] = [
     growthOverride: 0.2,
     isEnabled: true,
     dailyTarget: 3,
-    publishWindows: ["07:50", "12:40", "21:10"]
+    publishWindows: ["07:50", "12:40", "21:10"],
+    publishMode: "manual",
+    publishMinIntervalMin: 60
   }
 ];
 
@@ -72,6 +80,8 @@ async function run() {
           isEnabled: site.isEnabled,
           dailyTarget: site.dailyTarget,
           publishWindows: site.publishWindows,
+          publishMode: site.publishMode,
+          publishMinIntervalMin: site.publishMinIntervalMin,
           updatedAt: now,
           createdAt: now
         },

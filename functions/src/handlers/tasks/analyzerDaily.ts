@@ -13,6 +13,15 @@ type MetricRow = {
   createdAt?: unknown;
 };
 
+type ArticleRow = {
+  siteId?: string;
+  clusterId?: string;
+  status?: string;
+  qa?: { pass?: boolean };
+  titleSimMax?: number;
+  createdAt?: unknown;
+};
+
 function toMillis(value: unknown): number {
   if (value == null) return 0;
   if (typeof value === "number") return value;
@@ -42,6 +51,13 @@ function avg(rows: MetricRow[], key: keyof MetricRow) {
 }
 
 function windowRows(rows: MetricRow[], startMs: number, endMs: number) {
+  return rows.filter((r) => {
+    const ms = toMillis(r.createdAt);
+    return ms >= startMs && ms < endMs;
+  });
+}
+
+function windowByCreatedAt<T extends { createdAt?: unknown }>(rows: T[], startMs: number, endMs: number) {
   return rows.filter((r) => {
     const ms = toMillis(r.createdAt);
     return ms >= startMs && ms < endMs;
@@ -101,6 +117,34 @@ export async function analyzerDaily(payload: TaskBase) {
       }))
       .sort((a, b) => b.scoreAvg - a.scoreAvg)[0] ?? null;
 
+  const articleSnap = await db().collection("articles").where("siteId", "==", payload.siteId).limit(2000).get();
+  const articles = articleSnap.docs.map((d) => d.data() as ArticleRow);
+  const recent7dArticles = windowByCreatedAt(articles, runEndMs - 7 * 24 * 60 * 60 * 1000, runEndMs);
+
+  const clusterProgress = Object.values(
+    articles.reduce<Record<string, { clusterId: string; postedCount: number }>>((acc, row) => {
+      const clusterId = row.clusterId ?? "default";
+      acc[clusterId] = acc[clusterId] ?? { clusterId, postedCount: 0 };
+      if (row.status === "packaged" || row.status === "published") acc[clusterId].postedCount += 1;
+      return acc;
+    }, {})
+  ).map((x) => ({
+    clusterId: x.clusterId,
+    postedCount: x.postedCount,
+    phase2EntryRecommended: x.postedCount >= 15 && x.postedCount <= 25
+  }));
+
+  const recentHighPvCount = curr7Rows.filter((r) => (r.pv_24h ?? 0) >= 1000).length;
+  const qaFailCount = recent7dArticles.filter((a) => a.qa?.pass === false).length;
+  const qaFailRate = recent7dArticles.length > 0 ? qaFailCount / recent7dArticles.length : 0;
+  const titleSimRows = recent7dArticles.filter((a) => typeof a.titleSimMax === "number");
+  const titleSimAvg =
+    titleSimRows.length > 0
+      ? titleSimRows.reduce((s, a) => s + Number(a.titleSimMax ?? 0), 0) / titleSimRows.length
+      : 0;
+  const midCompetitionIncreaseRecommended =
+    recentHighPvCount >= 3 && qaFailRate < 0.1 && titleSimAvg < 0.3;
+
   const docId = `${payload.siteId}_${payload.runDate}`;
   await db()
     .doc(`siteMetricsDaily/${docId}`)
@@ -118,10 +162,36 @@ export async function analyzerDaily(payload: TaskBase) {
         wowPv24Pct,
         clusterAverages,
         templateWinner,
+        clusterProgress,
+        recommendations: {
+          midCompetitionIncreaseRecommended,
+          targetMidCompetitionShare: midCompetitionIncreaseRecommended ? 0.25 : 0.15,
+          reasons: {
+            recentHighPvCount,
+            qaFailRate,
+            titleSimAvg
+          }
+        },
         updatedAt: new Date()
       },
       { merge: true }
     );
+
+  for (const cluster of clusterProgress) {
+    const clusterDocId = `${payload.siteId}_${cluster.clusterId}`;
+    await db()
+      .doc(`clusters/${clusterDocId}`)
+      .set(
+        {
+          siteId: payload.siteId,
+          clusterId: cluster.clusterId,
+          postedCount: cluster.postedCount,
+          phase2EntryRecommended: cluster.phase2EntryRecommended,
+          updatedAt: new Date()
+        },
+        { merge: true }
+      );
+  }
 
   await db().collection("logs").add({
     siteId: payload.siteId,

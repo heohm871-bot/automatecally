@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { taskHandler } from "./handlers/taskHandler";
 import { db } from "./lib/admin";
+import { getGlobalSettings } from "./lib/globalSettings";
 import { randInt } from "./lib/jitter";
 import { enqueueTask } from "./lib/tasks";
 
@@ -11,12 +12,13 @@ export const enqueueDailyPipelines = onSchedule(
   { schedule: "0 9 * * *", timeZone: "Asia/Seoul" },
   async () => {
     const sitesSnap = await db().collection("sites").get();
+    const settings = await getGlobalSettings();
 
     const runDate = new Date().toISOString().slice(0, 10);
     for (const doc of sitesSnap.docs) {
       const siteId = doc.id;
 
-      const delaySec = randInt(120, 300);
+      const delaySec = randInt(settings.pipeline.enqueueJitterSecMin, settings.pipeline.enqueueJitterSecMax);
       const traceId = randomUUID();
 
       await enqueueTask({

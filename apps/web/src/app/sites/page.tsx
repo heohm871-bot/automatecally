@@ -17,6 +17,7 @@ import { useAuth } from "../../components/auth-provider";
 import { getFirebaseDb } from "../../lib/firebaseClient";
 
 type Platform = "naver" | "tistory";
+type PublishMode = "scheduled" | "manual";
 type SiteRow = {
   id: string;
   siteId?: string;
@@ -27,6 +28,8 @@ type SiteRow = {
   isEnabled?: boolean;
   dailyTarget?: number;
   publishWindows?: string[];
+  publishMode?: PublishMode;
+  publishMinIntervalMin?: number;
 };
 
 export default function SitesPage() {
@@ -40,6 +43,8 @@ export default function SitesPage() {
   const [isEnabled, setIsEnabled] = useState(true);
   const [dailyTarget, setDailyTarget] = useState("3");
   const [publishWindows, setPublishWindows] = useState("09:30,13:30,20:30");
+  const [publishMode, setPublishMode] = useState<PublishMode>("scheduled");
+  const [publishMinIntervalMin, setPublishMinIntervalMin] = useState("60");
   const [selectedSiteId, setSelectedSiteId] = useState("");
   const [msg, setMsg] = useState("");
 
@@ -69,6 +74,8 @@ export default function SitesPage() {
       growthOverride: Number(growthOverride) || 0,
       isEnabled,
       dailyTarget: Math.max(1, Number(dailyTarget) || 3),
+      publishMode,
+      publishMinIntervalMin: Math.max(0, Number(publishMinIntervalMin) || 60),
       publishWindows: publishWindows
         .split(",")
         .map((x) => x.trim())
@@ -87,6 +94,8 @@ export default function SitesPage() {
     setIsEnabled(true);
     setDailyTarget("3");
     setPublishWindows("09:30,13:30,20:30");
+    setPublishMode("scheduled");
+    setPublishMinIntervalMin("60");
     setMsg("site created");
     setTimeout(() => setMsg(""), 1200);
   }
@@ -149,6 +158,21 @@ export default function SitesPage() {
               inputMode="numeric"
               className="h-10 rounded-md border border-slate-300 px-3 text-sm"
             />
+            <select
+              value={publishMode}
+              onChange={(e) => setPublishMode(e.target.value as PublishMode)}
+              className="h-10 rounded-md border border-slate-300 px-3 text-sm"
+            >
+              <option value="scheduled">publish scheduled</option>
+              <option value="manual">publish manual</option>
+            </select>
+            <input
+              value={publishMinIntervalMin}
+              onChange={(e) => setPublishMinIntervalMin(e.target.value)}
+              placeholder="publishMinIntervalMin (default 60)"
+              inputMode="numeric"
+              className="h-10 rounded-md border border-slate-300 px-3 text-sm"
+            />
             <input
               value={publishWindows}
               onChange={(e) => setPublishWindows(e.target.value)}
@@ -177,6 +201,9 @@ export default function SitesPage() {
                     </p>
                     <p className="text-xs text-slate-600">
                       target/day: {s.dailyTarget ?? 3} · publish: {(s.publishWindows ?? []).join(", ") || "-"}
+                    </p>
+                    <p className="text-xs text-slate-600">
+                      mode: {s.publishMode ?? "scheduled"} · minInterval: {s.publishMinIntervalMin ?? 60}m
                     </p>
                   </div>
                   <button
