@@ -15,17 +15,13 @@ type AuthContextValue = {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const auth = getFirebaseAuth();
   const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(() => Boolean(auth));
+  const [error, setError] = useState(() => (auth ? "" : "Firebase .env 설정이 필요합니다."));
 
   useEffect(() => {
-    const auth = getFirebaseAuth();
-    if (!auth) {
-      setLoading(false);
-      setError("Firebase .env 설정이 필요합니다.");
-      return;
-    }
+    if (!auth) return;
 
     const unsub = onAuthStateChanged(auth, (next) => {
       setUser(next);
@@ -33,7 +29,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
 
     return unsub;
-  }, []);
+  }, [auth]);
 
   async function signIn() {
     setError("");

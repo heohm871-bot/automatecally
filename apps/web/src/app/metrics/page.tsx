@@ -133,12 +133,12 @@ export default function MetricsPage() {
   }
 
   const stats = useMemo(() => {
-    const nowSec = Date.now() / 1000;
-    const in7d = rows.filter((r) => (r.createdAt?.seconds ?? 0) >= nowSec - 7 * 24 * 3600);
+    const currentSec = rows.reduce((max, r) => Math.max(max, r.createdAt?.seconds ?? 0), 0);
+    const in7d = rows.filter((r) => (r.createdAt?.seconds ?? 0) >= currentSec - 7 * 24 * 3600);
     const prev7d = rows.filter(
       (r) =>
-        (r.createdAt?.seconds ?? 0) < nowSec - 7 * 24 * 3600 &&
-        (r.createdAt?.seconds ?? 0) >= nowSec - 14 * 24 * 3600
+        (r.createdAt?.seconds ?? 0) < currentSec - 7 * 24 * 3600 &&
+        (r.createdAt?.seconds ?? 0) >= currentSec - 14 * 24 * 3600
     );
     const avg = (arr: MetricRow[], key: keyof MetricRow) =>
       arr.length

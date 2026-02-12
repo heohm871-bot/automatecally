@@ -3,6 +3,8 @@ import { enqueueTask } from "../../lib/tasks";
 import type { TitleGeneratePayload } from "../schema";
 import { detectIntent } from "../../../../packages/shared/intent";
 import { maxTitleSimilarity } from "../../../../packages/shared/titleSimilarity";
+import { getGlobalSettings } from "../../lib/globalSettings";
+import { canUseLlm, getLlmUsage, bumpLlmUsage } from "../../lib/llmUsage";
 
 type KeywordDoc = { text?: string };
 type ArticleDoc = { titleFinal?: string };
@@ -42,6 +44,7 @@ function buildCandidates(keyword: string) {
 
 export async function titleGenerate(payload: TitleGeneratePayload) {
   const { siteId, keywordId } = payload;
+  const settings = await getGlobalSettings();
 
   const kwSnap = await db().doc(`keywords/${keywordId}`).get();
   if (!kwSnap.exists) throw new Error("keyword not found");
@@ -63,6 +66,9 @@ export async function titleGenerate(payload: TitleGeneratePayload) {
   }
 
   const candidates = buildCandidates(keyword);
+  const llmUsage = getLlmUsage(undefined);
+  const useLlm = process.env.TITLE_LLM_MODE === "llm" && canUseLlm("title", llmUsage, settings.caps);
+  const nextLlmUsage = useLlm ? bumpLlmUsage(llmUsage, "title") : llmUsage;
 
   let picked = candidates[0];
   let pickedSim = 1;
@@ -90,6 +96,7 @@ export async function titleGenerate(payload: TitleGeneratePayload) {
     titleFinal: picked,
     titleSimMax: pickedSim,
     status: "queued",
+    llmUsage: nextLlmUsage,
     createdAt: new Date(),
     trace: [
       {

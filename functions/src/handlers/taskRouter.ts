@@ -9,6 +9,7 @@ import { advisorWeeklyGlobal } from "./tasks/advisorWeeklyGlobal";
 import { analyzerDaily } from "./tasks/analyzerDaily";
 import { articlePackage } from "./tasks/articlePackage";
 import { articleQa } from "./tasks/articleQa";
+import { articleQaFix } from "./tasks/articleQaFix";
 import { articleGenerate } from "./tasks/articleGenerate";
 import { bodyGenerate } from "./tasks/bodyGenerate";
 import { imageGenerate } from "./tasks/imageGenerate";
@@ -35,6 +36,7 @@ export async function routeTask(payload: AnyTaskPayload) {
     else if (payload.taskType === "title_generate") await titleGenerate(payload);
     else if (payload.taskType === "body_generate") await bodyGenerate(payload);
     else if (payload.taskType === "article_qa") await articleQa(payload);
+    else if (payload.taskType === "article_qa_fix") await articleQaFix(payload);
     else if (payload.taskType === "topcard_render") await topcardRender(payload);
     else if (payload.taskType === "image_generate") await imageGenerate(payload);
     else if (payload.taskType === "article_package") await articlePackage(payload);

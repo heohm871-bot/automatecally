@@ -1,4 +1,5 @@
 import { db } from "../../lib/admin";
+import { getGlobalSettings } from "../../lib/globalSettings";
 import { runQaRules, type QaIssue, type QaResult } from "../../lib/qaRules";
 import { enqueueTask } from "../../lib/tasks";
 import type { ArticleQaPayload } from "../schema";
@@ -6,6 +7,7 @@ import type { ArticleQaPayload } from "../schema";
 type ArticleDoc = {
   html?: string;
   hashtags12?: string[];
+  qaFixCount?: number;
 };
 
 type SiteDoc = {
@@ -44,6 +46,7 @@ function applyQaOverride(base: QaResult): QaResult {
 
 export async function articleQa(payload: ArticleQaPayload) {
   const { siteId, articleId } = payload;
+  const settings = await getGlobalSettings();
 
   const aRef = db().doc(`articles/${articleId}`);
   const aSnap = await aRef.get();
@@ -62,35 +65,56 @@ export async function articleQa(payload: ArticleQaPayload) {
 
   await aRef.set({ qa, status: qa.pass ? "ready" : "qa_failed" }, { merge: true });
 
-  if (!qa.pass) return;
-
-  await enqueueTask({
-    queue: "light",
-    payload: {
-      ...payload,
-      taskType: "topcard_render",
-      idempotencyKey: `topcard_render:${siteId}:${articleId}`,
-      articleId
+  const allowImages = qa.pass || !settings.caps.generateImagesOnlyOnQaPass;
+  if (!qa.pass) {
+    const fixCount = typeof a.qaFixCount === "number" ? a.qaFixCount : 0;
+    if (fixCount < settings.caps.qaFixMax) {
+      await enqueueTask({
+        queue: "light",
+        payload: {
+          ...payload,
+          taskType: "article_qa_fix",
+          idempotencyKey: `article_qa_fix:${siteId}:${articleId}`,
+          articleId
+        }
+      });
     }
-  });
+    if (!allowImages) return;
+  }
 
-  await enqueueTask({
-    queue: "heavy",
-    payload: {
-      ...payload,
-      taskType: "image_generate",
-      idempotencyKey: `image_generate:${siteId}:${articleId}`,
-      articleId
-    }
-  });
+  if (qa.pass) {
+    await enqueueTask({
+      queue: "light",
+      payload: {
+        ...payload,
+        taskType: "topcard_render",
+        idempotencyKey: `topcard_render:${siteId}:${articleId}`,
+        articleId
+      }
+    });
+  }
 
-  await enqueueTask({
-    queue: "light",
-    payload: {
-      ...payload,
-      taskType: "article_package",
-      idempotencyKey: `article_package:${siteId}:${articleId}`,
-      articleId
-    }
-  });
+  if (allowImages) {
+    await enqueueTask({
+      queue: "heavy",
+      payload: {
+        ...payload,
+        taskType: "image_generate",
+        idempotencyKey: `image_generate:${siteId}:${articleId}`,
+        articleId
+      }
+    });
+  }
+
+  if (qa.pass) {
+    await enqueueTask({
+      queue: "light",
+      payload: {
+        ...payload,
+        taskType: "article_package",
+        idempotencyKey: `article_package:${siteId}:${articleId}`,
+        articleId
+      }
+    });
+  }
 }

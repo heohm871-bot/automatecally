@@ -3,6 +3,8 @@ import { enqueueTask } from "../../lib/tasks";
 import type { BodyGeneratePayload } from "../schema";
 import { buildImagePlan } from "../../../../packages/shared/imagePlan";
 import { buildTopCardPoints } from "../../../../packages/shared/topCardPoints";
+import { getGlobalSettings } from "../../lib/globalSettings";
+import { canUseLlm, bumpLlmUsage, getLlmUsage } from "../../lib/llmUsage";
 
 type ArticleDoc = {
   keywordId?: string;
@@ -20,12 +22,16 @@ type KeywordDoc = { text?: string };
 
 export async function bodyGenerate(payload: BodyGeneratePayload) {
   const { siteId, articleId } = payload;
+  const settings = await getGlobalSettings();
 
   const aRef = db().doc(`articles/${articleId}`);
   const aSnap = await aRef.get();
   if (!aSnap.exists) throw new Error("article not found");
   const a = (aSnap.data() ?? {}) as ArticleDoc;
   await aRef.set({ status: "generating" }, { merge: true });
+  const llmUsage = getLlmUsage((a as { llmUsage?: unknown }).llmUsage);
+  const useLlm = process.env.BODY_LLM_MODE === "llm" && canUseLlm("body", llmUsage, settings.caps);
+  const nextLlmUsage = useLlm ? bumpLlmUsage(llmUsage, "body") : llmUsage;
 
   const kwSnap = await db().doc(`keywords/${a.keywordId}`).get();
   const kw = (kwSnap.data() ?? {}) as KeywordDoc;
@@ -106,6 +112,7 @@ ${detailBlock}
       topCardDraft: { labelsShort },
       hashtags12: a.hashtags12 ?? Array.from({ length: 12 }, (_, i) => `#tag${i + 1}`),
       html,
+      llmUsage: nextLlmUsage,
       status: "generating"
     },
     { merge: true }
