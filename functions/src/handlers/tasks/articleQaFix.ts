@@ -5,6 +5,8 @@ import { runQaRules } from "../../lib/qaRules";
 import { enqueueTask } from "../../lib/tasks";
 import type { ArticleQaFixPayload } from "../schema";
 import { canUseLlm, getLlmUsage, bumpLlmUsage } from "../../lib/llmUsage";
+import { callOpenAiStructuredCached, MODEL_DEFAULT } from "../../lib/llm/openai";
+import { QaFixJsonSchema, QaFixOutZ, SCHEMA_VERSION } from "../../lib/llm/schemas";
 
 type ArticleDoc = {
   html?: string;
@@ -16,6 +18,25 @@ type ArticleDoc = {
 
 type KeywordDoc = { text?: string };
 type SiteDoc = { defaults?: { banWords?: string[] } };
+
+function makeHashtags12(keyword: string) {
+  const base = keyword.replace(/[#\s]+/g, "").trim() || "키워드";
+  const seeds = [
+    base,
+    `${base}방법`,
+    `${base}정리`,
+    `${base}비교`,
+    `${base}주의`,
+    `${base}팁`,
+    `${base}추천`,
+    `${base}후기`,
+    `${base}가이드`,
+    `${base}체크`,
+    `${base}핵심`,
+    `${base}FAQ`
+  ];
+  return seeds.map((x) => `#${x}`.replace(/\s+/g, ""));
+}
 
 export async function articleQaFix(payload: ArticleQaFixPayload) {
   const { siteId, articleId } = payload;
@@ -52,11 +73,52 @@ export async function articleQaFix(payload: ArticleQaFixPayload) {
 
   const llmUsage = getLlmUsage(a.llmUsage);
   const canUse = canUseLlm("qaFix", llmUsage, settings.caps);
-  const useLlm = process.env.QA_FIX_LLM_MODE === "llm" && canUse;
+  const useLlm = Boolean(process.env.OPENAI_API_KEY) && canUse;
 
   let nextHtml = a.html ?? "";
+  let nextHashtags12 = a.hashtags12 ?? [];
   if (useLlm) {
-    // Placeholder: LLM integration not wired. Fallback to rule-based fix.
+    const normalizedRequest = {
+      keyword: keywordText,
+      issues: currentQa.issues,
+      html: a.html ?? "",
+      bannedWords: site?.defaults?.banWords ?? []
+    };
+    const promptVersion = "2026-02-12";
+    const system = [
+      "너는 HTML QA 수정기다.",
+      "응답은 반드시 JSON 스키마를 따르고 html만 반환한다.",
+      "기존 문맥을 유지하면서 QA 이슈를 최소 수정으로 해결한다."
+    ].join(" ");
+    const user = [
+      `키워드: ${keywordText}`,
+      `이슈: ${currentQa.issues.join(", ") || "none"}`,
+      `금칙어: ${(site?.defaults?.banWords ?? []).join(", ") || "없음"}`,
+      "원본 HTML:",
+      a.html ?? ""
+    ].join("\n");
+
+    try {
+      const { out } = await callOpenAiStructuredCached({
+        task: "qaFix",
+        normalizedRequest,
+        schemaVersion: SCHEMA_VERSION,
+        promptVersion,
+        model: MODEL_DEFAULT,
+        schemaName: "blog_qa_fix_v1",
+        jsonSchema: QaFixJsonSchema,
+        system,
+        user,
+        zod: QaFixOutZ,
+        ttlDays: 30
+      });
+      nextHtml = out.html;
+    } catch {
+      // fallback: keep rule-based fix only
+    }
+  }
+  if (currentQa.issues.includes("missing_hashtags_12")) {
+    nextHashtags12 = makeHashtags12(keywordText);
   }
   nextHtml = fixHtmlWithQaIssues({
     html: nextHtml,
@@ -65,11 +127,13 @@ export async function articleQaFix(payload: ArticleQaFixPayload) {
     bannedWords: site?.defaults?.banWords ?? []
   });
 
+  const nextFixCount = currentFixCount + 1;
   const nextUsage = useLlm ? bumpLlmUsage(llmUsage, "qaFix") : llmUsage;
   await aRef.set(
     {
       html: nextHtml,
-      qaFixCount: currentFixCount + 1,
+      hashtags12: nextHashtags12,
+      qaFixCount: nextFixCount,
       llmUsage: nextUsage,
       status: "generating",
       updatedAt: new Date()
@@ -79,10 +143,11 @@ export async function articleQaFix(payload: ArticleQaFixPayload) {
 
   await enqueueTask({
     queue: "light",
+    ignoreAlreadyExists: true,
     payload: {
       ...payload,
       taskType: "article_qa",
-      idempotencyKey: `article_qa:${siteId}:${articleId}`,
+      idempotencyKey: `article_qa:${siteId}:${articleId}:after-fix-${nextFixCount}`,
       articleId
     }
   });

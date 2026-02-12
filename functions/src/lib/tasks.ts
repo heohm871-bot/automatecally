@@ -1,4 +1,5 @@
 import { CloudTasksClient } from "@google-cloud/tasks";
+import { createHash } from "node:crypto";
 
 const client = new CloudTasksClient();
 
@@ -6,7 +7,21 @@ export type EnqueueArgs = {
   queue: "light" | "heavy";
   scheduleTimeSecFromNow?: number;
   payload: unknown;
+  ignoreAlreadyExists?: boolean;
 };
+
+function getPayloadMeta(payload: unknown) {
+  const raw = (payload ?? {}) as Record<string, unknown>;
+  const idempotencyKey = typeof raw.idempotencyKey === "string" ? raw.idempotencyKey : "";
+  const retryCount =
+    typeof raw.retryCount === "number" && Number.isFinite(raw.retryCount) ? Math.max(0, Math.floor(raw.retryCount)) : 0;
+  return { idempotencyKey, retryCount };
+}
+
+function makeTaskId(idempotencyKey: string, retryCount: number) {
+  const seed = `${idempotencyKey}:r${retryCount}`;
+  return `t_${createHash("sha256").update(seed).digest("hex").slice(0, 48)}`;
+}
 
 async function withTimeout<T>(promise: Promise<T>, ms: number, code: string, taskType: string): Promise<T> {
   let timer: NodeJS.Timeout | undefined;
@@ -22,6 +37,14 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, code: string, tas
   }
 }
 
+function isAlreadyExistsError(err: unknown) {
+  const code = Number((err as { code?: unknown })?.code);
+  if (code === 6) return true;
+
+  const message = String((err as { message?: unknown })?.message ?? "");
+  return message.includes("ALREADY_EXISTS");
+}
+
 export async function enqueueTask(args: EnqueueArgs) {
   if (process.env.TASKS_EXECUTE_INLINE === "1") {
     const [{ AnyTaskPayloadSchema }, { routeTask }] = await Promise.all([
@@ -34,13 +57,17 @@ export async function enqueueTask(args: EnqueueArgs) {
     return;
   }
 
-  const { ENV } = await import("./env");
+  const { getEnv } = await import("./env");
+  const ENV = getEnv();
   const queueName = args.queue === "heavy" ? ENV.QUEUE_HEAVY : ENV.QUEUE_LIGHT;
   const parent = client.queuePath(ENV.GCP_PROJECT, ENV.TASKS_LOCATION, queueName);
 
   const body = Buffer.from(JSON.stringify(args.payload)).toString("base64");
+  const meta = getPayloadMeta(args.payload);
+  const taskId = meta.idempotencyKey ? makeTaskId(meta.idempotencyKey, meta.retryCount) : "";
 
   const task: {
+    name?: string;
     httpRequest: {
       httpMethod: "POST";
       url: string;
@@ -59,11 +86,19 @@ export async function enqueueTask(args: EnqueueArgs) {
       body
     }
   };
+  if (taskId) {
+    task.name = client.taskPath(ENV.GCP_PROJECT, ENV.TASKS_LOCATION, queueName, taskId);
+  }
 
   if (args.scheduleTimeSecFromNow && args.scheduleTimeSecFromNow > 0) {
     const scheduleTime = new Date(Date.now() + args.scheduleTimeSecFromNow * 1000);
     task.scheduleTime = { seconds: Math.floor(scheduleTime.getTime() / 1000) };
   }
 
-  await client.createTask({ parent, task });
+  try {
+    await client.createTask({ parent, task });
+  } catch (err: unknown) {
+    if (args.ignoreAlreadyExists && isAlreadyExistsError(err)) return;
+    throw err;
+  }
 }

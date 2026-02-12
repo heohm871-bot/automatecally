@@ -194,5 +194,33 @@ export async function imageGenerate(payload: ImageGeneratePayload) {
     );
   }
 
-  await aRef.set({ images: nextImages }, { merge: true });
+  const unresolvedPhotoSlots = photoSlots.filter((slot) => !nextImages.some((img) => img.slot === slot.slot));
+  if (unresolvedPhotoSlots.length > 0) {
+    for (const slot of unresolvedPhotoSlots) {
+      const fallbackType = (slot.infoType ?? "checklist") as InfoType;
+      const png = renderInfographicPng({
+        title: String(a.titleFinal ?? a.keywordId ?? "인포그래픽").slice(0, 40),
+        infoType: fallbackType,
+        labels: labelsShort
+      });
+      const path = `sites/${siteId}/articles/${articleId}/fallback-${slot.slot}.png`;
+      if (!isE2eSkipStorage()) {
+        await bucket().file(path).save(png, { contentType: "image/png", resumable: false });
+      }
+      nextImages.push({
+        slot: slot.slot,
+        kind: "infographic_fallback",
+        infoType: fallbackType,
+        storagePath: path,
+        alt: slot.slot
+      });
+    }
+  }
+
+  // Preserve non-plan slots (e.g. top card) that may be written concurrently by other tasks.
+  const latestSnap = await aRef.get();
+  const latest = (latestSnap.data() ?? {}) as ArticleDoc;
+  const preserved = (latest.images ?? []).filter((img) => !slots.some((slot) => slot.slot === img.slot));
+
+  await aRef.set({ images: [...preserved, ...nextImages] }, { merge: true });
 }

@@ -69,12 +69,15 @@ export async function articleQa(payload: ArticleQaPayload) {
   if (!qa.pass) {
     const fixCount = typeof a.qaFixCount === "number" ? a.qaFixCount : 0;
     if (fixCount < settings.caps.qaFixMax) {
+      const fixAttempt = fixCount + 1;
       await enqueueTask({
         queue: "light",
+        ignoreAlreadyExists: true,
         payload: {
           ...payload,
           taskType: "article_qa_fix",
-          idempotencyKey: `article_qa_fix:${siteId}:${articleId}`,
+          qaFixAttempt: fixAttempt,
+          idempotencyKey: `article_qa_fix:${siteId}:${articleId}:attempt-${fixAttempt}`,
           articleId
         }
       });
@@ -85,6 +88,7 @@ export async function articleQa(payload: ArticleQaPayload) {
   if (qa.pass) {
     await enqueueTask({
       queue: "light",
+      ignoreAlreadyExists: true,
       payload: {
         ...payload,
         taskType: "topcard_render",
@@ -97,6 +101,7 @@ export async function articleQa(payload: ArticleQaPayload) {
   if (allowImages) {
     await enqueueTask({
       queue: "heavy",
+      ignoreAlreadyExists: true,
       payload: {
         ...payload,
         taskType: "image_generate",
@@ -109,6 +114,7 @@ export async function articleQa(payload: ArticleQaPayload) {
   if (qa.pass) {
     await enqueueTask({
       queue: "light",
+      ignoreAlreadyExists: true,
       payload: {
         ...payload,
         taskType: "article_package",
