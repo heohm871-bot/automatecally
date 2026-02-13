@@ -12,8 +12,15 @@ type KeywordCandidate = {
   blogDocs?: number;
 };
 
-function pickOne<T>(arr: T[]) {
-  return arr[Math.floor(Math.random() * arr.length)];
+function shuffle<T>(arr: T[]) {
+  const out = [...arr];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const tmp = out[i];
+    out[i] = out[j];
+    out[j] = tmp;
+  }
+  return out;
 }
 
 export async function kwScore(payload: TaskBase) {
@@ -59,17 +66,49 @@ export async function kwScore(payload: TaskBase) {
 
   if (low.length === 0 && mid.length === 0) return;
 
+  const slot =
+    typeof (payload as { scheduleSlot?: unknown }).scheduleSlot === "number"
+      ? Math.max(1, Math.floor((payload as { scheduleSlot?: number }).scheduleSlot ?? 1))
+      : 1;
   const useMid = mid.length > 0 && Math.random() < cfg.midCompetitionShare;
-  const chosen = useMid ? pickOne(mid) : low.length > 0 ? pickOne(low) : pickOne(mid);
+  const pool = useMid ? (mid.length > 0 ? mid : low) : low.length > 0 ? low : mid;
+  const ordered = shuffle(pool);
+  let chosen: KeywordCandidate | null = null;
 
-  await db().doc(`keywords/${chosen.id}`).set({ status: "selected", selectedAt: new Date() }, { merge: true });
+  for (const candidate of ordered) {
+    const kwRef = db().doc(`keywords/${candidate.id}`);
+    const picked = await db().runTransaction(async (tx) => {
+      const kwSnap = await tx.get(kwRef);
+      if (!kwSnap.exists) return false;
+      const kwData = (kwSnap.data() ?? {}) as { status?: string };
+      if (kwData.status !== "candidate") return false;
+      tx.set(
+        kwRef,
+        {
+          status: "selected",
+          selectedAt: new Date(),
+          selectedRunDate: payload.runDate,
+          selectedSlot: slot
+        },
+        { merge: true }
+      );
+      return true;
+    });
+    if (picked) {
+      chosen = candidate;
+      break;
+    }
+  }
+
+  if (!chosen) return;
 
   await enqueueTask({
     queue: "light",
     payload: {
       ...payload,
+      scheduleSlot: slot,
       taskType: "title_generate",
-      idempotencyKey: `title_generate:${payload.siteId}:${chosen.id}`,
+      idempotencyKey: `title_generate:${payload.siteId}:${payload.runDate}:${chosen.id}`,
       keywordId: chosen.id
     }
   });

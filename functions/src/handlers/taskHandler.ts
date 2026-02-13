@@ -1,12 +1,12 @@
 import { onRequest } from "firebase-functions/v2/https";
-import { ENV } from "../lib/env";
+import { getTaskSecret } from "../lib/env";
 import { maybeEnqueueSingleRetry, recordFailure } from "../lib/retryOnce";
 import { AnyTaskPayloadSchema, TaskBaseSchema } from "./schema";
 import { routeTask } from "./taskRouter";
 
 export const taskHandler = onRequest(async (req, res) => {
   try {
-    if (req.get("X-Task-Secret") !== ENV.TASK_SECRET) {
+    if (req.get("X-Task-Secret") !== getTaskSecret()) {
       res.status(403).send("forbidden");
       return;
     }

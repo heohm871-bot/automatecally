@@ -1,7 +1,7 @@
 {
   "name": "functions",
   "private": true,
-  "main": "lib/index.js",
+  "main": "lib/functions/src/index.js",
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "lint": "echo \"(optional)\"",
@@ -14,6 +14,7 @@
     "sites:verify": "npm run build && node lib/functions/src/dev/verifySites.js",
     "settings:seed": "npm run build && node lib/functions/src/dev/seedGlobalSettings.js",
     "analyzer:smoke": "npm run build && node lib/functions/src/dev/analyzerDailySmoke.js",
+    "usage:report": "npm run build && node lib/functions/src/dev/usageReport.js",
     "e2e:cleanup": "npm run build && node lib/functions/src/dev/cleanupE2e.js",
     "e2e:dump": "npm run build && node lib/functions/src/dev/dumpE2eData.js",
     "e2e:check": "INFRA_ENV=staging npm run indexes:check && FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 E2E_CLEANUP=1 npm run e2e:once",
@@ -22,12 +23,15 @@
     "serve": "firebase emulators:start --only functions,firestore,storage",
     "deploy": "firebase deploy --only functions"
   },
-  "engines": { "node": "20" },
+  "engines": {
+    "node": "22"
+  },
   "dependencies": {
     "@google-cloud/tasks": "^4.0.0",
     "@napi-rs/canvas": "^0.1.59",
     "firebase-admin": "^12.5.0",
     "firebase-functions": "^6.0.1",
+    "openai": "^6.21.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {

@@ -63,7 +63,8 @@ export async function routeTask(payload: AnyTaskPayload) {
       durationMs: Date.now() - startedAt
     });
 
-    if (payload.retryCount < settings.pipeline.retrySameDayMax) {
+    const retryLimit = Math.min(1, Math.max(0, settings.pipeline.retrySameDayMax));
+    if (payload.retryCount < retryLimit) {
       const retryQueue =
         payload.taskType === "body_generate" || payload.taskType === "image_generate" ? "heavy" : "light";
       const retryDelaySec = settings.pipeline.retryDelaySec;

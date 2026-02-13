@@ -18,33 +18,38 @@ export const enqueueDailyPipelines = onSchedule(
     for (const doc of sitesSnap.docs) {
       const siteId = doc.id;
 
-      const delaySec = randInt(settings.pipeline.enqueueJitterSecMin, settings.pipeline.enqueueJitterSecMax);
-      const traceId = randomUUID();
+      const jitterMin = Math.max(120, settings.pipeline.enqueueJitterSecMin);
+      const jitterMax = Math.max(jitterMin, Math.min(300, settings.pipeline.enqueueJitterSecMax));
+
+      for (let slot = 1; slot <= 3; slot++) {
+        const delaySec = randInt(jitterMin, jitterMax) + (slot - 1) * 120;
+        const traceId = randomUUID();
+        await enqueueTask({
+          queue: "light",
+          scheduleTimeSecFromNow: delaySec,
+          payload: {
+            schemaVersion: "1.0",
+            taskType: "kw_collect",
+            siteId,
+            traceId,
+            scheduleSlot: slot,
+            idempotencyKey: `kw_collect:${siteId}:${runDate}:slot${slot}`,
+            requestedByUid: "SYSTEM",
+            createdAt: new Date().toISOString(),
+            retryCount: 0,
+            runDate
+          }
+        });
+      }
 
       await enqueueTask({
         queue: "light",
-        scheduleTimeSecFromNow: delaySec,
-        payload: {
-          schemaVersion: "1.0",
-          taskType: "kw_collect",
-          siteId,
-          traceId,
-          idempotencyKey: `kw_collect:${siteId}:${runDate}`,
-          requestedByUid: "SYSTEM",
-          createdAt: new Date().toISOString(),
-          retryCount: 0,
-          runDate
-        }
-      });
-
-      await enqueueTask({
-        queue: "light",
-        scheduleTimeSecFromNow: delaySec + 30,
+        scheduleTimeSecFromNow: randInt(jitterMin, jitterMax) + 8 * 60,
         payload: {
           schemaVersion: "1.0",
           taskType: "analyzer_daily",
           siteId,
-          traceId,
+          traceId: randomUUID(),
           idempotencyKey: `analyzer_daily:${siteId}:${runDate}`,
           requestedByUid: "SYSTEM",
           createdAt: new Date().toISOString(),

@@ -82,6 +82,9 @@ async function run() {
     args.requirePixabay ||
     String(env.PREFLIGHT_REQUIRE_PIXABAY ?? "").trim() === "1" ||
     String(env.PREFLIGHT_REQUIRE_PIXABAY ?? "").toLowerCase().trim() === "true";
+  const requireOpenAi =
+    String(env.PREFLIGHT_REQUIRE_OPENAI ?? "").trim() === "1" ||
+    String(env.PREFLIGHT_REQUIRE_OPENAI ?? "").toLowerCase().trim() === "true";
 
   const requireValue = (key, label = key) => {
     const value = env[key];
@@ -123,6 +126,19 @@ async function run() {
   }
 
   requireValue("TASK_SECRET");
+
+  const openaiKey = String(env.OPENAI_API_KEY ?? "").trim();
+  if (!openaiKey) {
+    if (requireOpenAi) {
+      errors.push("OPENAI_API_KEY missing (required by preflight policy)");
+      checks.push({ check: "OPENAI_API_KEY", ok: false, value: "required-missing" });
+    } else {
+      warnings.push("OPENAI_API_KEY missing (LLM generation/moderation will use fallback path)");
+      checks.push({ check: "OPENAI_API_KEY", ok: true, value: "optional-missing" });
+    }
+  } else {
+    checks.push({ check: "OPENAI_API_KEY", ok: true, value: "set" });
+  }
 
   const pixabay = String(env.PIXABAY_API_KEY ?? "").trim();
   if (!pixabay) {

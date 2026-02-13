@@ -1,7 +1,13 @@
 {
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "default"
+    }
+  ],
   "firestore": {
     "rules": "infra/firestore.rules",
-    "indexes": "infra/firestore.indexes.json"
+    "indexes": "infra/firestore.indexes.datastore.json"
   },
   "emulators": {
     "firestore": {

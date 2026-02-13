@@ -5,9 +5,17 @@ import { detectIntent } from "../../../../packages/shared/intent";
 import { maxTitleSimilarity } from "../../../../packages/shared/titleSimilarity";
 import { getGlobalSettings } from "../../lib/globalSettings";
 import { canUseLlm, getLlmUsage, bumpLlmUsage } from "../../lib/llmUsage";
+import { callOpenAiStructuredCached, MODEL_DEFAULT } from "../../lib/llm/openai";
+import { SCHEMA_VERSION, TitleJsonSchema, TitleOutZ } from "../../lib/llm/schemas";
+import { createHash } from "node:crypto";
 
 type KeywordDoc = { text?: string };
 type ArticleDoc = { titleFinal?: string };
+
+function makeArticleId(siteId: string, keywordId: string, runDate: string) {
+  const digest = createHash("sha256").update(`${siteId}:${keywordId}:${runDate}`).digest("hex").slice(0, 24);
+  return `a_${digest}`;
+}
 
 const A = (shock: string, situation: string, kw: string) => `"${shock}" ${situation} ${kw}`;
 const B = (lack: string, num: number, kw: string) => `${lack} ${num}가지 ${kw}`;
@@ -66,8 +74,12 @@ export async function titleGenerate(payload: TitleGeneratePayload) {
   }
 
   const candidates = buildCandidates(keyword);
-  const llmUsage = getLlmUsage(undefined);
-  const useLlm = process.env.TITLE_LLM_MODE === "llm" && canUseLlm("title", llmUsage, settings.caps);
+  const articleId = makeArticleId(siteId, keywordId, payload.runDate);
+  const aRef = db().doc(`articles/${articleId}`);
+  const existingSnap = await aRef.get();
+  const existing = (existingSnap.data() ?? {}) as { llmUsage?: unknown };
+  const llmUsage = getLlmUsage(existing.llmUsage);
+  const useLlm = Boolean(process.env.OPENAI_API_KEY) && canUseLlm("title", llmUsage, settings.caps);
   const nextLlmUsage = useLlm ? bumpLlmUsage(llmUsage, "title") : llmUsage;
 
   let picked = candidates[0];
@@ -86,37 +98,99 @@ export async function titleGenerate(payload: TitleGeneratePayload) {
     }
   }
 
-  const aRef = db().collection("articles").doc();
-  const nowIso = new Date().toISOString();
-  await aRef.set({
-    siteId,
-    keywordId,
-    intent,
-    titleCandidates: candidates,
-    titleFinal: picked,
-    titleSimMax: pickedSim,
-    status: "queued",
-    llmUsage: nextLlmUsage,
-    createdAt: new Date(),
-    trace: [
-      {
-        task: "title_generate",
-        at: nowIso,
-        ok: true,
-        status: "success",
-        traceId: payload.traceId,
-        retryCount: payload.retryCount
+  if (useLlm) {
+    const normalizedRequest = {
+      keyword,
+      intent,
+      oldTitles: oldTitles.slice(0, 30)
+    };
+    const promptVersion = "2026-02-12";
+    const system = [
+      "너는 블로그 제목 생성기다.",
+      "반드시 JSON 스키마를 따르고 한국어 제목 1개만 생성한다.",
+      "과장/허위 표현을 피하고 자연스러운 클릭 유도형 제목을 만든다."
+    ].join(" ");
+    const user = [
+      `키워드: ${keyword}`,
+      `의도: ${intent}`,
+      `금지: 기존 제목과 유사한 문장`,
+      `기존 제목 목록: ${oldTitles.slice(0, 30).join(" | ")}`
+    ].join("\n");
+
+    try {
+      const { out } = await callOpenAiStructuredCached({
+        task: "title",
+        normalizedRequest,
+        schemaVersion: SCHEMA_VERSION,
+        promptVersion,
+        model: MODEL_DEFAULT,
+        schemaName: "blog_title_v1",
+        jsonSchema: TitleJsonSchema,
+        system,
+        user,
+        zod: TitleOutZ,
+        ttlDays: 30
+      });
+
+      const llmTitle = out.title.trim();
+      if (llmTitle) {
+        const llmSim = maxTitleSimilarity(llmTitle, oldTitles);
+        if (llmSim < 0.8) {
+          picked = llmTitle;
+          pickedSim = llmSim;
+        }
       }
-    ]
-  });
+    } catch {
+      // fallback: keep deterministic candidate result
+    }
+  }
+
+  const nowIso = new Date().toISOString();
+  const regenThreshold = 0.3;
+  const regenCandidates = candidates
+    .map((title) => ({ title, sim: maxTitleSimilarity(title, oldTitles) }))
+    .sort((a, b) => a.sim - b.sim)
+    .map((x) => x.title)
+    .filter((x) => x !== picked)
+    .slice(0, 3);
+
+  await aRef.set(
+    {
+      siteId,
+      keywordId,
+      runDate: payload.runDate,
+      dedupeKey: `${siteId}:${keywordId}:${payload.runDate}`,
+      intent,
+      titleCandidates: candidates,
+      titleFinal: picked,
+      titleSimMax: pickedSim,
+      titleNeedsRegeneration: pickedSim > regenThreshold,
+      titleRegenCandidates: pickedSim > regenThreshold ? regenCandidates : [],
+      status: "queued",
+      llmUsage: nextLlmUsage,
+      createdAt: existingSnap.exists ? existingSnap.get("createdAt") ?? new Date() : new Date(),
+      updatedAt: new Date(),
+      trace: [
+        {
+          task: "title_generate",
+          at: nowIso,
+          ok: true,
+          status: "success",
+          traceId: payload.traceId,
+          retryCount: payload.retryCount
+        }
+      ]
+    },
+    { merge: true }
+  );
 
   await enqueueTask({
     queue: "heavy",
     payload: {
       ...payload,
       taskType: "body_generate",
-      idempotencyKey: `body_generate:${siteId}:${aRef.id}`,
-      articleId: aRef.id
+      idempotencyKey: `body_generate:${siteId}:${articleId}`,
+      articleId
     }
   });
 }

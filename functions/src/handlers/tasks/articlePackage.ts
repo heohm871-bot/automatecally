@@ -1,6 +1,7 @@
 import { bucket, db } from "../../lib/admin";
 import { isE2eSkipStorage } from "../../lib/e2eFlags";
 import { getGlobalSettings } from "../../lib/globalSettings";
+import { moderateArticleContent } from "../../lib/llm/moderation";
 import type { ArticlePackagePayload } from "../schema";
 
 type ArticleDoc = {
@@ -37,6 +38,25 @@ export async function articlePackage(payload: ArticlePackagePayload) {
   const scheduledAtIso =
     publishMode === "scheduled" ? new Date(Date.now() + publishMinIntervalMin * 60 * 1000).toISOString() : null;
 
+  const moderation = await moderateArticleContent({
+    title: String(a.titleFinal ?? ""),
+    html: String(a.html ?? "")
+  });
+
+  if (moderation.blocked) {
+    await db()
+      .doc(`articles/${articleId}`)
+      .set(
+        {
+          status: "moderation_blocked",
+          moderation,
+          updatedAt: new Date()
+        },
+        { merge: true }
+      );
+    return;
+  }
+
   if (!isE2eSkipStorage()) {
     await bucket().file(`${base}/title.txt`).save(String(a.titleFinal ?? ""), { resumable: false });
     await bucket().file(`${base}/post.html`).save(String(a.html ?? ""), {
@@ -59,7 +79,8 @@ export async function articlePackage(payload: ArticlePackagePayload) {
           mode: publishMode,
           minIntervalMin: publishMinIntervalMin,
           scheduledAt: scheduledAtIso
-        }
+        },
+        moderation
       },
       { merge: true }
     );
