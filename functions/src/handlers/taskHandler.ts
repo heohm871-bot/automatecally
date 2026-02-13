@@ -21,7 +21,7 @@ export const taskHandler = onRequest(async (req, res) => {
       await recordFailure(raw, err);
       const parsedBase = TaskBaseSchema.safeParse(raw);
       if (parsedBase.success && parsedBase.data.retryCount === 0) {
-        await maybeEnqueueSingleRetry(parsedBase.data, "light");
+        await maybeEnqueueSingleRetry(parsedBase.data);
       }
     } catch {
       // ignore secondary errors

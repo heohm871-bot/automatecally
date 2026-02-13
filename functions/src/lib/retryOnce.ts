@@ -1,4 +1,5 @@
 import { db } from "./admin";
+import { getGlobalSettings } from "./globalSettings";
 import { enqueueTask } from "./tasks";
 
 export type TaskPayloadBase = {
@@ -32,9 +33,27 @@ export async function recordFailure(payload: Record<string, unknown>, err: unkno
     );
 }
 
-export async function maybeEnqueueSingleRetry(payload: TaskPayloadBase, queue: "light" | "heavy") {
-  if (payload.retryCount !== 0) return;
+function pickRetryQueue(taskType: string): "light" | "heavy" {
+  return taskType === "body_generate" || taskType === "image_generate" ? "heavy" : "light";
+}
 
-  const retryPayload = { ...payload, retryCount: 1 as const };
-  await enqueueTask({ queue, scheduleTimeSecFromNow: 30 * 60, payload: retryPayload });
+export async function maybeEnqueueSingleRetry(payload: TaskPayloadBase) {
+  try {
+    const settings = await getGlobalSettings();
+    const retryLimit = Math.min(1, Math.max(0, settings.pipeline.retrySameDayMax));
+    if (payload.retryCount >= retryLimit) return;
+
+    const retryDelaySec = Math.max(0, Math.floor(settings.pipeline.retryDelaySec));
+    const queue = pickRetryQueue(payload.taskType);
+    const retryPayload = { ...payload, retryCount: (payload.retryCount + 1) as 0 | 1 };
+    await enqueueTask({
+      queue,
+      scheduleTimeSecFromNow: retryDelaySec,
+      ignoreAlreadyExists: true,
+      payload: retryPayload
+    });
+  } catch {
+    // Best-effort only. The main retry path is taskRouter's catch (after routeTask),
+    // this one is for early failures (schema parse / unexpected handler crash).
+  }
 }

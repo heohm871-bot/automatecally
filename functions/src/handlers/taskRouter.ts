@@ -18,6 +18,43 @@ import { kwScore } from "./tasks/kwScore";
 import { titleGenerate } from "./tasks/titleGenerate";
 import { topcardRender } from "./tasks/topcardRender";
 
+function getRuntimeEnv() {
+  // Prefer an explicit APP_ENV; fall back to common local convention.
+  const v = String(process.env.APP_ENV ?? process.env.INFRA_ENV ?? "").trim().toLowerCase();
+  if (v === "prod" || v === "production") return "prod";
+  if (v === "staging") return "staging";
+  if (v === "dev" || v === "development") return "dev";
+  return "dev";
+}
+
+function getRunTag(payload: AnyTaskPayload) {
+  const raw = (payload as unknown as { runTag?: unknown })?.runTag;
+  if (typeof raw !== "string") return "";
+  const s = raw.trim().slice(0, 24);
+  return /^[a-zA-Z0-9_-]+$/.test(s) ? s : "";
+}
+
+function getRunReason(payload: AnyTaskPayload) {
+  const raw = (payload as unknown as { runReason?: unknown })?.runReason;
+  if (typeof raw !== "string") return "";
+  return raw.trim().slice(0, 120);
+}
+
+function enforceProdRunTagPolicy(payload: AnyTaskPayload) {
+  const env = getRuntimeEnv();
+  if (env !== "prod") return;
+
+  const runTag = getRunTag(payload);
+  if (!runTag) return; // default/prod path
+
+  // 운영(prod) 재처리는 명시적인 runTag + 사유가 있어야만 허용.
+  const allow = runTag === "prod-rerun" || runTag === "backfill";
+  const reason = getRunReason(payload);
+  if (!allow || !reason) {
+    throw new Error("NON_RETRYABLE:prod_runTag_not_allowed_or_missing_reason");
+  }
+}
+
 export async function routeTask(payload: AnyTaskPayload) {
   const runRef = db().doc(`taskRuns/${payload.idempotencyKey}`);
   const runSnap = await runRef.get();
@@ -30,6 +67,8 @@ export async function routeTask(payload: AnyTaskPayload) {
   const settings = await getGlobalSettings();
 
   try {
+    enforceProdRunTagPolicy(payload);
+
     if (payload.taskType === "kw_collect") await kwCollect(payload);
     else if (payload.taskType === "kw_score") await kwScore(payload);
     else if (payload.taskType === "article_generate") await articleGenerate(payload);
@@ -64,7 +103,8 @@ export async function routeTask(payload: AnyTaskPayload) {
     });
 
     const retryLimit = Math.min(1, Math.max(0, settings.pipeline.retrySameDayMax));
-    if (payload.retryCount < retryLimit) {
+    const nonRetryable = errorText.startsWith("NON_RETRYABLE:");
+    if (!nonRetryable && payload.retryCount < retryLimit) {
       const retryQueue =
         payload.taskType === "body_generate" || payload.taskType === "image_generate" ? "heavy" : "light";
       const retryDelaySec = settings.pipeline.retryDelaySec;
