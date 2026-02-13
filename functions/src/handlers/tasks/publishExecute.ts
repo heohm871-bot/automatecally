@@ -130,6 +130,22 @@ export async function publishExecute(payload: PublishExecutePayload) {
     return;
   }
 
+  // In E2E and local runs, skip external publish integration entirely.
+  if (process.env.E2E_SKIP_PUBLISH === "1") {
+    await aRef.set(
+      {
+        publishResult: {
+          ok: true,
+          skipped: true,
+          reason: "e2e_skip_publish",
+          executedAt: new Date().toISOString()
+        }
+      },
+      { merge: true }
+    );
+    return;
+  }
+
   const scheduledAt = payload.scheduledAt ?? a.publishPlan?.scheduledAt ?? null;
   const nowIso = new Date().toISOString();
 
