@@ -70,6 +70,8 @@ export async function kwScore(payload: TaskBase) {
     typeof (payload as { scheduleSlot?: unknown }).scheduleSlot === "number"
       ? Math.max(1, Math.floor((payload as { scheduleSlot?: number }).scheduleSlot ?? 1))
       : 1;
+  const runTagRaw = (payload as unknown as { runTag?: unknown })?.runTag;
+  const runTag = typeof runTagRaw === "string" && runTagRaw.trim() ? runTagRaw.trim().slice(0, 24) : "";
   const useMid = mid.length > 0 && Math.random() < cfg.midCompetitionShare;
   const pool = useMid ? (mid.length > 0 ? mid : low) : low.length > 0 ? low : mid;
   const ordered = shuffle(pool);
@@ -108,7 +110,7 @@ export async function kwScore(payload: TaskBase) {
       ...payload,
       scheduleSlot: slot,
       taskType: "title_generate",
-      idempotencyKey: `title_generate:${payload.siteId}:${payload.runDate}:${chosen.id}`,
+      idempotencyKey: `title_generate:${payload.siteId}:${payload.runDate}:${chosen.id}${runTag ? `:${runTag}` : ""}`,
       keywordId: chosen.id
     }
   });
