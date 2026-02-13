@@ -13,6 +13,11 @@
   - `scripts/native-cutover-check.sh`는 이제 `INFRA_ENV=prod`로 rules/indexes를 base 템플릿에 sync 후 deploy 하도록 보강(실수 방지)
   - A 브랜치 기준 검증: `npm --prefix functions test` 통과, `npm --prefix apps/web run build` 통과
 
+- B 추가 진행(예약발행 실행기/CI 안정화):
+  - `publish_execute` 태스크 추가 + (초기) tistory publish 연동
+  - CI(`functions-e2e-once`) 실패 원인 분석 중: 여전히 `status != packaged` 케이스 존재
+    - 다음 세션 1순위: PR run artifacts의 `functions-e2e-log` + dump(`taskFailures.json`, `articles.json`)로 원인 확정 후 수정
+
 ## 2026-02-11
 
 # Worklog - 2026-02-11
