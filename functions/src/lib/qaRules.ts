@@ -5,7 +5,9 @@ export type QaIssue =
   | "missing_table_or_faq"
   | "too_short"
   | "banned_words"
-  | "missing_hr_per_section";
+  | "missing_hr_per_section"
+  | "contains_emoji"
+  | "contains_markdown_bold";
 
 export type QaResult = {
   pass: boolean;
@@ -14,6 +16,14 @@ export type QaResult = {
 
 function countMatches(html: string, re: RegExp) {
   return (html.match(re) ?? []).length;
+}
+
+function hasEmoji(s: string) {
+  try {
+    return /\p{Extended_Pictographic}/u.test(s);
+  } catch {
+    return false;
+  }
 }
 
 export function runQaRules(args: {
@@ -44,6 +54,9 @@ export function runQaRules(args: {
 
   const bannedHit = (args.bannedWords ?? []).some((w) => w && html.includes(w));
   if (bannedHit) issues.push("banned_words");
+
+  if (html.includes("**")) issues.push("contains_markdown_bold");
+  if (hasEmoji(html)) issues.push("contains_emoji");
 
   return { pass: issues.length === 0, issues };
 }

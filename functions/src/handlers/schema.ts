@@ -50,6 +50,12 @@ export const ArticleQaPayloadSchema = TaskBaseSchema.extend({
 }).passthrough();
 export type ArticleQaPayload = z.infer<typeof ArticleQaPayloadSchema>;
 
+export const ArticleQaFixPayloadSchema = TaskBaseSchema.extend({
+  taskType: z.literal("article_qa_fix"),
+  articleId: z.string()
+}).passthrough();
+export type ArticleQaFixPayload = z.infer<typeof ArticleQaFixPayloadSchema>;
+
 export const TopcardRenderPayloadSchema = TaskBaseSchema.extend({
   taskType: z.literal("topcard_render"),
   articleId: z.string()
@@ -67,6 +73,13 @@ export const ArticlePackagePayloadSchema = TaskBaseSchema.extend({
   articleId: z.string()
 }).passthrough();
 export type ArticlePackagePayload = z.infer<typeof ArticlePackagePayloadSchema>;
+
+export const PublishExecutePayloadSchema = TaskBaseSchema.extend({
+  taskType: z.literal("publish_execute"),
+  articleId: z.string(),
+  scheduledAt: z.string().optional()
+}).passthrough();
+export type PublishExecutePayload = z.infer<typeof PublishExecutePayloadSchema>;
 
 export const AnalyzerDailyPayloadSchema = TaskBaseSchema.extend({
   taskType: z.literal("analyzer_daily")
@@ -86,9 +99,11 @@ export const AnyTaskPayloadSchema = z.discriminatedUnion("taskType", [
   TitleGeneratePayloadSchema,
   BodyGeneratePayloadSchema,
   ArticleQaPayloadSchema,
+  ArticleQaFixPayloadSchema,
   TopcardRenderPayloadSchema,
   ImageGeneratePayloadSchema,
   ArticlePackagePayloadSchema,
+  PublishExecutePayloadSchema,
   AnalyzerDailyPayloadSchema,
   AdvisorWeeklyGlobalPayloadSchema
 ]);

@@ -1,28 +1,41 @@
 {
   "name": "functions",
   "private": true,
-  "main": "lib/index.js",
+  "main": "lib/functions/src/index.js",
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "lint": "echo \"(optional)\"",
     "test": "vitest run",
+    "preflight": "node scripts/preflight.mjs",
+    "rules:sync": "npm run build && node lib/functions/src/dev/rulesManager.js sync",
+    "rules:check": "npm run build && node lib/functions/src/dev/rulesManager.js check",
     "indexes:sync": "npm run build && node lib/functions/src/dev/indexesManager.js sync",
     "indexes:check": "npm run build && node lib/functions/src/dev/indexesManager.js check",
     "e2e:seed": "npm run build && node lib/functions/src/dev/seedE2e.js",
+    "sites:seed": "npm run build && node lib/functions/src/dev/seedSites.js",
+    "sites:verify": "npm run build && node lib/functions/src/dev/verifySites.js",
+    "settings:seed": "npm run build && node lib/functions/src/dev/seedGlobalSettings.js",
+    "analyzer:smoke": "npm run build && node lib/functions/src/dev/analyzerDailySmoke.js",
+    "usage:report": "npm run build && node lib/functions/src/dev/usageReport.js",
     "e2e:cleanup": "npm run build && node lib/functions/src/dev/cleanupE2e.js",
     "e2e:dump": "npm run build && node lib/functions/src/dev/dumpE2eData.js",
     "e2e:check": "INFRA_ENV=staging npm run indexes:check && FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 E2E_CLEANUP=1 npm run e2e:once",
     "e2e:check:timeout": "timeout 180s bash -lc 'FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 E2E_CLEANUP=1 npm run e2e:once'",
-    "e2e:once": "npm run build && node lib/functions/src/dev/e2eOnce.js",
+    "e2e:once": "npm run build && TASKS_EXECUTE_INLINE=1 E2E_SKIP_STORAGE=1 node scripts/preflight.mjs --mode=e2e && TASKS_EXECUTE_INLINE=1 E2E_SKIP_STORAGE=1 node lib/functions/src/dev/e2eOnce.js",
+    "package:promote:dev": "npm run build && APP_ENV=dev node lib/functions/src/dev/packagePromote.js",
+    "package:promote:prod": "npm run build && APP_ENV=prod node lib/functions/src/dev/packagePromote.js",
     "serve": "firebase emulators:start --only functions,firestore,storage",
     "deploy": "firebase deploy --only functions"
   },
-  "engines": { "node": "20" },
+  "engines": {
+    "node": "22"
+  },
   "dependencies": {
     "@google-cloud/tasks": "^4.0.0",
     "@napi-rs/canvas": "^0.1.59",
     "firebase-admin": "^12.5.0",
     "firebase-functions": "^6.0.1",
+    "openai": "^6.21.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {

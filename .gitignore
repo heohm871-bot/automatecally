@@ -34,9 +34,16 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
+firestore-debug.log
+functions/.artifacts/
+WORKLOG_*.md
 
 # env files (can opt-in for committing if needed)
 .env*
+functions/.env*
+
+# local secrets (never commit)
+.secrets/
 
 # vercel
 .vercel

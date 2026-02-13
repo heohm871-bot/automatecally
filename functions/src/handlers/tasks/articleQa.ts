@@ -1,4 +1,5 @@
 import { db } from "../../lib/admin";
+import { getGlobalSettings } from "../../lib/globalSettings";
 import { runQaRules, type QaIssue, type QaResult } from "../../lib/qaRules";
 import { enqueueTask } from "../../lib/tasks";
 import type { ArticleQaPayload } from "../schema";
@@ -6,6 +7,7 @@ import type { ArticleQaPayload } from "../schema";
 type ArticleDoc = {
   html?: string;
   hashtags12?: string[];
+  qaFixCount?: number;
 };
 
 type SiteDoc = {
@@ -21,7 +23,9 @@ function parseForcedIssues(raw: string | undefined): QaIssue[] {
     "missing_table_or_faq",
     "too_short",
     "banned_words",
-    "missing_hr_per_section"
+    "missing_hr_per_section",
+    "contains_emoji",
+    "contains_markdown_bold"
   ];
   const items = raw
     .split(",")
@@ -42,8 +46,17 @@ function applyQaOverride(base: QaResult): QaResult {
   return base;
 }
 
+function getRunTag(payload: ArticleQaPayload) {
+  const raw = (payload as unknown as { runTag?: unknown })?.runTag;
+  if (typeof raw !== "string") return "";
+  const s = raw.trim().slice(0, 24);
+  return /^[a-zA-Z0-9_-]+$/.test(s) ? s : "";
+}
+
 export async function articleQa(payload: ArticleQaPayload) {
   const { siteId, articleId } = payload;
+  const settings = await getGlobalSettings();
+  const runTag = getRunTag(payload);
 
   const aRef = db().doc(`articles/${articleId}`);
   const aSnap = await aRef.get();
@@ -60,37 +73,66 @@ export async function articleQa(payload: ArticleQaPayload) {
   });
   const qa = applyQaOverride(qaBase);
 
-  await aRef.set({ qa, status: qa.pass ? "ready" : "draft" }, { merge: true });
+  await aRef.set({ qa, status: qa.pass ? "ready" : "qa_failed" }, { merge: true });
 
-  if (!qa.pass) return;
-
-  await enqueueTask({
-    queue: "light",
-    payload: {
-      ...payload,
-      taskType: "topcard_render",
-      idempotencyKey: `topcard_render:${siteId}:${articleId}`,
-      articleId
+  const allowImages = qa.pass || !settings.caps.generateImagesOnlyOnQaPass;
+  if (!qa.pass) {
+    const fixCount = typeof a.qaFixCount === "number" ? a.qaFixCount : 0;
+    if (fixCount < settings.caps.qaFixMax) {
+      const fixAttempt = fixCount + 1;
+      await enqueueTask({
+        queue: "light",
+        ignoreAlreadyExists: true,
+        payload: {
+          ...payload,
+          taskType: "article_qa_fix",
+          qaFixAttempt: fixAttempt,
+          idempotencyKey: `article_qa_fix:${siteId}:${payload.runDate}:${articleId}:attempt-${fixAttempt}${
+            runTag ? `:${runTag}` : ""
+          }`,
+          articleId
+        }
+      });
     }
-  });
+    if (!allowImages) return;
+  }
 
-  await enqueueTask({
-    queue: "heavy",
-    payload: {
-      ...payload,
-      taskType: "image_generate",
-      idempotencyKey: `image_generate:${siteId}:${articleId}`,
-      articleId
-    }
-  });
+  if (qa.pass) {
+    await enqueueTask({
+      queue: "light",
+      ignoreAlreadyExists: true,
+      payload: {
+        ...payload,
+        taskType: "topcard_render",
+        idempotencyKey: `topcard_render:${siteId}:${payload.runDate}:${articleId}${runTag ? `:${runTag}` : ""}`,
+        articleId
+      }
+    });
+  }
 
-  await enqueueTask({
-    queue: "light",
-    payload: {
-      ...payload,
-      taskType: "article_package",
-      idempotencyKey: `article_package:${siteId}:${articleId}`,
-      articleId
-    }
-  });
+  if (allowImages) {
+    await enqueueTask({
+      queue: "heavy",
+      ignoreAlreadyExists: true,
+      payload: {
+        ...payload,
+        taskType: "image_generate",
+        idempotencyKey: `image_generate:${siteId}:${payload.runDate}:${articleId}${runTag ? `:${runTag}` : ""}`,
+        articleId
+      }
+    });
+  }
+
+  if (qa.pass) {
+    await enqueueTask({
+      queue: "light",
+      ignoreAlreadyExists: true,
+      payload: {
+        ...payload,
+        taskType: "article_package",
+        idempotencyKey: `article_package:${siteId}:${payload.runDate}:${articleId}${runTag ? `:${runTag}` : ""}`,
+        articleId
+      }
+    });
+  }
 }
