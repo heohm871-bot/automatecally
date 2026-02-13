@@ -42,6 +42,9 @@ WORKLOG_*.md
 .env*
 functions/.env*
 
+# local secrets (never commit)
+.secrets/
+
 # vercel
 .vercel
 
