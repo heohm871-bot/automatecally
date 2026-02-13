@@ -3,6 +3,14 @@
 - 이 파일은 누적형 작업 인수인계 문서입니다.
 - 매 세션 마지막에는 반드시 이 파일에 최신 상태를 정리합니다.
 
+## 2026-02-13
+
+- Worklog: `docs/worklog/2026-02-13.md`
+- 핵심: `status`(process)와 `lifecycle`(governance) 분리 변경을 A 단독 브랜치/PR로 분리 완료
+  - A 브랜치: `feat/lifecycle-status-split` (push 완료, PR 생성 가능)
+  - B 변경은 별도 커밋들로 분해해 `feat/pipeline-images-qa-fix`로 복구(cherry-pick) 완료
+- 주의: `infra/firestore.rules` 권한 정책 변경이 포함되어 있어 prod 반영 전 검토 필요
+
 ## 2026-02-11
 
 # Worklog - 2026-02-11
