@@ -23,7 +23,9 @@ function parseForcedIssues(raw: string | undefined): QaIssue[] {
     "missing_table_or_faq",
     "too_short",
     "banned_words",
-    "missing_hr_per_section"
+    "missing_hr_per_section",
+    "contains_emoji",
+    "contains_markdown_bold"
   ];
   const items = raw
     .split(",")

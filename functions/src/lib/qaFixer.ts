@@ -4,6 +4,14 @@ function stripTags(html: string) {
   return html.replace(/<[^>]+>/g, "");
 }
 
+function stripEmoji(s: string) {
+  try {
+    return s.replace(/\p{Extended_Pictographic}/gu, "");
+  } catch {
+    return s;
+  }
+}
+
 function insertAfterFirstParagraph(html: string, block: string) {
   const idx = html.indexOf("</p>");
   if (idx === -1) return `${block}\n${html}`;
@@ -81,6 +89,8 @@ export function fixHtmlWithQaIssues(args: {
   if (issues.includes("missing_hr_per_section")) html = ensureHrCount(html);
   if (issues.includes("too_short")) html = ensureMinLength(html, keyword);
   if (issues.includes("banned_words")) html = removeBannedWords(html, bannedWords);
+  if (issues.includes("contains_markdown_bold")) html = html.replace(/\*\*/g, "");
+  if (issues.includes("contains_emoji")) html = stripEmoji(html);
 
   return html;
 }
