@@ -7,7 +7,7 @@
     "lint": "echo \"(optional)\"",
     "test": "vitest run",
     "indexes:sync": "npm run build && node lib/functions/src/dev/indexesManager.js sync",
-    "indexes:check": "npm run build && node lib/functions/src/dev/indexesManager.js check",
+    "indexes:check": "node scripts/indexes-check.mjs",
     "e2e:seed": "npm run build && node lib/functions/src/dev/seedE2e.js",
     "e2e:cleanup": "npm run build && node lib/functions/src/dev/cleanupE2e.js",
     "e2e:dump": "npm run build && node lib/functions/src/dev/dumpE2eData.js",
