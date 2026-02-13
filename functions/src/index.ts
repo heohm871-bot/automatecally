@@ -17,11 +17,16 @@ export const enqueueDailyPipelines = onSchedule(
     const runDate = new Date().toISOString().slice(0, 10);
     for (const doc of sitesSnap.docs) {
       const siteId = doc.id;
+      const site = (doc.data() ?? {}) as { isEnabled?: boolean; dailyTarget?: number };
+      if (site.isEnabled === false) continue;
 
       const jitterMin = Math.max(120, settings.pipeline.enqueueJitterSecMin);
       const jitterMax = Math.max(jitterMin, Math.min(300, settings.pipeline.enqueueJitterSecMax));
 
-      for (let slot = 1; slot <= 3; slot++) {
+      const dailyTarget = typeof site.dailyTarget === "number" ? Math.floor(site.dailyTarget) : 3;
+      const slotCount = Math.max(1, Math.min(6, Number.isFinite(dailyTarget) ? dailyTarget : 3));
+
+      for (let slot = 1; slot <= slotCount; slot++) {
         const delaySec = randInt(jitterMin, jitterMax) + (slot - 1) * 120;
         const traceId = randomUUID();
         await enqueueTask({
