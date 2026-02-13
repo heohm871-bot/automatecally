@@ -63,7 +63,7 @@ jobs:
         run: |
           set -o pipefail
           npx firebase-tools emulators:exec --only firestore --project demo-e2e \
-            "bash -lc 'FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 TASKS_EXECUTE_INLINE=1 TASK_SECRET=ci-secret E2E_SKIP_PUBLISH=1 npm run e2e:check:timeout --prefix functions || (DUMP_INCLUDE_ARTICLE_HISTORY_ONLY=1 npm run e2e:dump --prefix functions && exit 1)'" | tee /tmp/functions-e2e.log
+            "bash -lc 'FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 TASKS_EXECUTE_INLINE=1 TASK_SECRET=ci-secret E2E_SKIP_PUBLISH=1 npm run e2e:check:timeout --prefix functions || (DUMP_INCLUDE_ARTICLE_HISTORY_ONLY=1 DUMP_INCLUDE_TASK_FAILURES=1 DUMP_INCLUDE_ARTICLES=1 DUMP_SITE_ID=site-e2e DUMP_SORT_BY=updatedAt npm run e2e:dump --prefix functions && exit 1)'" | tee /tmp/functions-e2e.log
 
       - name: Upload E2E Log (always)
         if: always()

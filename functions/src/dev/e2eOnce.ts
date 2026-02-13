@@ -127,10 +127,22 @@ async function run() {
     const articleDoc = articleSnap.docs[0];
     articleId = articleDoc.id;
 
-    const article = articleDoc.data() as { packagePath?: string; qa?: { pass?: boolean }; status?: string };
-    status = article.status ?? null;
-    qaPass = article.qa?.pass ?? null;
-    packagePath = article.packagePath ?? null;
+    // Even with inline execution, Firestore writes can land slightly after the last awaited task.
+    // Poll briefly for the terminal state to avoid flakiness.
+    const maxWaitMs = Number(process.env.E2E_WAIT_PACKAGED_MS ?? 10_000);
+    const pollEveryMs = 250;
+    const startedWait = Date.now();
+    while (true) {
+      const snap = await db().doc(`articles/${articleId}`).get();
+      const article = (snap.data() ?? {}) as { packagePath?: string; qa?: { pass?: boolean }; status?: string };
+      status = article.status ?? null;
+      qaPass = article.qa?.pass ?? null;
+      packagePath = article.packagePath ?? null;
+
+      if (status === "packaged") break;
+      if (Date.now() - startedWait >= maxWaitMs) break;
+      await new Promise((r) => setTimeout(r, pollEveryMs));
+    }
 
     if (status !== "packaged") {
       throw new E2eError(
