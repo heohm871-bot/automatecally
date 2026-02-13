@@ -107,6 +107,7 @@ export async function titleGenerate(payload: TitleGeneratePayload) {
   const existingSnap = await aRef.get();
   const existing = (existingSnap.data() ?? {}) as { llmUsage?: unknown };
   const existingLifecycle = existingSnap.exists ? (existingSnap.get("lifecycle") as unknown) : undefined;
+  const existingStatus = existingSnap.exists ? (existingSnap.get("status") as unknown) : undefined;
   const llmUsage = getLlmUsage(existing.llmUsage);
   const useLlm = Boolean(process.env.OPENAI_API_KEY) && canUseLlm("title", llmUsage, settings.caps);
   const nextLlmUsage = useLlm ? bumpLlmUsage(llmUsage, "title") : llmUsage;
@@ -204,7 +205,8 @@ export async function titleGenerate(payload: TitleGeneratePayload) {
       titleSimMax: pickedSim,
       titleNeedsRegeneration: pickedSim > regenThreshold,
       titleRegenCandidates: pickedSim > regenThreshold ? regenCandidates : [],
-      status: "queued",
+      // Never regress status on retries (inline execution may re-run title_generate if downstream fails).
+      ...(typeof existingStatus === "string" && existingStatus && existingStatus !== "queued" ? {} : { status: "queued" }),
       // Keep governance separate from pipeline status. Only default when missing; never overwrite.
       ...(typeof existingLifecycle === "string" ? {} : { lifecycle: "draft" }),
       llmUsage: nextLlmUsage,
