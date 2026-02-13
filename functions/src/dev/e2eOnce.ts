@@ -84,6 +84,29 @@ async function run() {
     const routed = await stepWithTimeout("routeTask(kw_score)", routeTask(payload), stepTimeoutMs);
     stepStats.push({ step: "routeTask(kw_score)", durationMs: routed.durationMs });
 
+    const runsSnap = await stepWithTimeout(
+      "queryTaskRuns",
+      db().collection("taskRuns").where("traceId", "==", fixture.traceId).limit(200).get(),
+      stepTimeoutMs
+    );
+    stepStats.push({ step: "queryTaskRuns", durationMs: runsSnap.durationMs });
+
+    const runs: Array<Record<string, unknown>> = runsSnap.result.docs.map((d) => ({
+      id: d.id,
+      ...(d.data() as Record<string, unknown>)
+    }));
+    const failed = runs.filter((r) => r.status === "failed");
+    if (failed.length > 0) {
+      const top = failed
+        .slice(0, 5)
+        .map(
+          (r) =>
+            `${String(r.taskType ?? "unknown")} ${String(r.id ?? "").slice(0, 60)} ${String(r.error ?? "")}`
+        )
+        .join(" | ");
+      throw new E2eError("E2E_TASK_FAILED", `E2E failed: some tasks failed (${failed.length}). ${top}`);
+    }
+
     const queried = await stepWithTimeout(
       "queryArticle",
       db()
