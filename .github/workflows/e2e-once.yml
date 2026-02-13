@@ -24,7 +24,7 @@ jobs:
 
       - name: Install functions deps
         run: npm ci --prefix functions
-
+        
       - name: Validate Firestore indexes (fail-fast)
         run: INFRA_ENV=staging npm run indexes:check --prefix functions
 
