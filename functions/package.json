@@ -22,6 +22,8 @@
     "e2e:check": "INFRA_ENV=staging npm run indexes:check && FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 E2E_CLEANUP=1 npm run e2e:once",
     "e2e:check:timeout": "timeout 180s bash -lc 'FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 E2E_CLEANUP=1 npm run e2e:once'",
     "e2e:once": "npm run build && TASKS_EXECUTE_INLINE=1 E2E_SKIP_STORAGE=1 node scripts/preflight.mjs --mode=e2e && TASKS_EXECUTE_INLINE=1 E2E_SKIP_STORAGE=1 node lib/functions/src/dev/e2eOnce.js",
+    "package:promote:dev": "npm run build && APP_ENV=dev node lib/functions/src/dev/packagePromote.js",
+    "package:promote:prod": "npm run build && APP_ENV=prod node lib/functions/src/dev/packagePromote.js",
     "serve": "firebase emulators:start --only functions,firestore,storage",
     "deploy": "firebase deploy --only functions"
   },
