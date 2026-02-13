@@ -72,7 +72,8 @@ export async function articleGenerate(payload: ArticleGeneratePayload) {
       <h2 style="border-left:5px solid #d4af37; padding-left:15px;">섹션 4</h2>
       <p>FAQ: 자주 묻는 질문</p>
     </div>`,
-    status: "draft",
+    status: "queued",
+    lifecycle: "draft",
     createdAt: new Date()
   });
 
