@@ -25,6 +25,7 @@ type SiteRow = {
   platform?: Platform;
   topic?: string;
   seedKeywords?: string[];
+  tistory?: { blogName?: string; visibility?: number; category?: string };
   growthOverride?: number;
   isEnabled?: boolean;
   dailyTarget?: number;
@@ -41,6 +42,8 @@ export default function SitesPage() {
   const [platform, setPlatform] = useState<Platform>("naver");
   const [topic, setTopic] = useState("");
   const [seedKeywords, setSeedKeywords] = useState("");
+  const [tistoryBlogName, setTistoryBlogName] = useState("");
+  const [tistoryVisibility, setTistoryVisibility] = useState("3");
   const [growthOverride, setGrowthOverride] = useState("");
   const [isEnabled, setIsEnabled] = useState(true);
   const [dailyTarget, setDailyTarget] = useState("3");
@@ -78,6 +81,14 @@ export default function SitesPage() {
         .map((x) => x.trim())
         .filter(Boolean)
         .slice(0, 50),
+      ...(platform === "tistory"
+        ? {
+            tistory: {
+              blogName: tistoryBlogName.trim(),
+              visibility: Math.max(0, Math.floor(Number(tistoryVisibility) || 3))
+            }
+          }
+        : {}),
       growthOverride: Number(growthOverride) || 0,
       isEnabled,
       dailyTarget: Math.max(1, Number(dailyTarget) || 3),
@@ -98,6 +109,8 @@ export default function SitesPage() {
     setName("");
     setTopic("");
     setSeedKeywords("");
+    setTistoryBlogName("");
+    setTistoryVisibility("3");
     setGrowthOverride("");
     setIsEnabled(true);
     setDailyTarget("3");
@@ -158,6 +171,23 @@ export default function SitesPage() {
               placeholder="seedKeywords (comma) 예: 다이소, 코스트코, 세탁"
               className="h-10 rounded-md border border-slate-300 px-3 text-sm"
             />
+            {platform === "tistory" ? (
+              <>
+                <input
+                  value={tistoryBlogName}
+                  onChange={(e) => setTistoryBlogName(e.target.value)}
+                  placeholder="tistory blogName (required for publish)"
+                  className="h-10 rounded-md border border-slate-300 px-3 text-sm"
+                />
+                <input
+                  value={tistoryVisibility}
+                  onChange={(e) => setTistoryVisibility(e.target.value)}
+                  placeholder="tistory visibility (0/1/3, default 3)"
+                  inputMode="numeric"
+                  className="h-10 rounded-md border border-slate-300 px-3 text-sm"
+                />
+              </>
+            ) : null}
             <input
               value={growthOverride}
               onChange={(e) => setGrowthOverride(e.target.value)}
@@ -214,6 +244,11 @@ export default function SitesPage() {
                       {s.platform ?? "n/a"} · topic: {s.topic ?? "-"} · growthOverride: {typeof s.growthOverride === "number" ? s.growthOverride : 0}
                     </p>
                     <p className="text-xs text-slate-600">seedKeywords: {(s.seedKeywords ?? []).length}</p>
+                    {s.platform === "tistory" ? (
+                      <p className="text-xs text-slate-600">
+                        tistory: blogName={s.tistory?.blogName ?? "-"} · visibility={typeof s.tistory?.visibility === "number" ? s.tistory.visibility : "-"}
+                      </p>
+                    ) : null}
                     <p className="text-xs text-slate-600">
                       target/day: {s.dailyTarget ?? 3} · publish: {(s.publishWindows ?? []).join(", ") || "-"}
                     </p>
