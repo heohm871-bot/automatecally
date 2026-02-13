@@ -7,6 +7,8 @@
     "lint": "echo \"(optional)\"",
     "test": "vitest run",
     "preflight": "node scripts/preflight.mjs",
+    "rules:sync": "npm run build && node lib/functions/src/dev/rulesManager.js sync",
+    "rules:check": "npm run build && node lib/functions/src/dev/rulesManager.js check",
     "indexes:sync": "npm run build && node lib/functions/src/dev/indexesManager.js sync",
     "indexes:check": "npm run build && node lib/functions/src/dev/indexesManager.js check",
     "e2e:seed": "npm run build && node lib/functions/src/dev/seedE2e.js",
