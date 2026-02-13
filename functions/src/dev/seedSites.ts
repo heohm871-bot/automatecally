@@ -5,6 +5,7 @@ type SeedSite = {
   name: string;
   platform: "naver" | "tistory";
   topic: string;
+  seedKeywords?: string[];
   growthOverride: number;
   isEnabled: boolean;
   dailyTarget: number;
@@ -19,6 +20,7 @@ const DEFAULT_SITES: SeedSite[] = [
     name: "Naver Life Lab",
     platform: "naver",
     topic: "생활 꿀팁",
+    seedKeywords: ["다이소", "코스트코", "세탁", "정리정돈"],
     growthOverride: 0,
     isEnabled: true,
     dailyTarget: 3,
@@ -31,6 +33,7 @@ const DEFAULT_SITES: SeedSite[] = [
     name: "Tistory Tech Brief",
     platform: "tistory",
     topic: "테크/생산성",
+    seedKeywords: ["노션", "구글 스프레드시트", "윈도우", "아이폰"],
     growthOverride: 0.1,
     isEnabled: true,
     dailyTarget: 3,
@@ -43,6 +46,7 @@ const DEFAULT_SITES: SeedSite[] = [
     name: "Naver Money Note",
     platform: "naver",
     topic: "재테크/절약",
+    seedKeywords: ["적금", "연말정산", "절약", "가계부"],
     growthOverride: 0.2,
     isEnabled: true,
     dailyTarget: 3,
@@ -76,6 +80,7 @@ async function run() {
           name: site.name,
           platform: site.platform,
           topic: site.topic,
+          seedKeywords: site.seedKeywords ?? [],
           growthOverride: site.growthOverride,
           isEnabled: site.isEnabled,
           dailyTarget: site.dailyTarget,

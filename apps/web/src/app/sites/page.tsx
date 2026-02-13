@@ -24,6 +24,7 @@ type SiteRow = {
   name?: string;
   platform?: Platform;
   topic?: string;
+  seedKeywords?: string[];
   growthOverride?: number;
   isEnabled?: boolean;
   dailyTarget?: number;
@@ -39,6 +40,7 @@ export default function SitesPage() {
   const [name, setName] = useState("");
   const [platform, setPlatform] = useState<Platform>("naver");
   const [topic, setTopic] = useState("");
+  const [seedKeywords, setSeedKeywords] = useState("");
   const [growthOverride, setGrowthOverride] = useState("");
   const [isEnabled, setIsEnabled] = useState(true);
   const [dailyTarget, setDailyTarget] = useState("3");
@@ -71,6 +73,11 @@ export default function SitesPage() {
       name: name.trim(),
       platform,
       topic: topic.trim(),
+      seedKeywords: seedKeywords
+        .split(",")
+        .map((x) => x.trim())
+        .filter(Boolean)
+        .slice(0, 50),
       growthOverride: Number(growthOverride) || 0,
       isEnabled,
       dailyTarget: Math.max(1, Number(dailyTarget) || 3),
@@ -90,6 +97,7 @@ export default function SitesPage() {
     setSiteIdInput("");
     setName("");
     setTopic("");
+    setSeedKeywords("");
     setGrowthOverride("");
     setIsEnabled(true);
     setDailyTarget("3");
@@ -142,6 +150,12 @@ export default function SitesPage() {
               value={topic}
               onChange={(e) => setTopic(e.target.value)}
               placeholder="topic (예: 생활 꿀팁)"
+              className="h-10 rounded-md border border-slate-300 px-3 text-sm"
+            />
+            <input
+              value={seedKeywords}
+              onChange={(e) => setSeedKeywords(e.target.value)}
+              placeholder="seedKeywords (comma) 예: 다이소, 코스트코, 세탁"
               className="h-10 rounded-md border border-slate-300 px-3 text-sm"
             />
             <input
@@ -199,6 +213,7 @@ export default function SitesPage() {
                     <p className="text-xs text-slate-600">
                       {s.platform ?? "n/a"} · topic: {s.topic ?? "-"} · growthOverride: {typeof s.growthOverride === "number" ? s.growthOverride : 0}
                     </p>
+                    <p className="text-xs text-slate-600">seedKeywords: {(s.seedKeywords ?? []).length}</p>
                     <p className="text-xs text-slate-600">
                       target/day: {s.dailyTarget ?? 3} · publish: {(s.publishWindows ?? []).join(", ") || "-"}
                     </p>
