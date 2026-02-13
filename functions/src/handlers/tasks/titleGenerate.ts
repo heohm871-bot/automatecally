@@ -229,7 +229,7 @@ export async function titleGenerate(payload: TitleGeneratePayload) {
     payload: {
       ...payload,
       taskType: "body_generate",
-      idempotencyKey: `body_generate:${siteId}:${articleId}`,
+      idempotencyKey: `body_generate:${siteId}:${payload.runDate}:${articleId}${runTag ? `:${runTag}` : ""}`,
       articleId
     }
   });

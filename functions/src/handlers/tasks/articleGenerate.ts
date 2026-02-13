@@ -82,7 +82,7 @@ export async function articleGenerate(payload: ArticleGeneratePayload) {
     payload: {
       ...payload,
       taskType: "article_qa",
-      idempotencyKey: `article_qa:${siteId}:${articleRef.id}`,
+      idempotencyKey: `article_qa:${siteId}:${payload.runDate}:${articleRef.id}`,
       articleId: articleRef.id
     }
   });

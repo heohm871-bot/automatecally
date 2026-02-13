@@ -3,6 +3,7 @@ import { isE2eSkipStorage } from "../../lib/e2eFlags";
 import { getGlobalSettings } from "../../lib/globalSettings";
 import { nextSpecificWindowUtcMs, nextWindowUtcMs, parseHm } from "../../lib/publishSchedule";
 import { moderateArticleContent } from "../../lib/llm/moderation";
+import { enqueueTask } from "../../lib/tasks";
 import type { ArticlePackagePayload } from "../schema";
 
 type ArticleDoc = {
@@ -153,4 +154,25 @@ export async function articlePackage(payload: ArticlePackagePayload) {
       },
       { merge: true }
     );
+
+  // Schedule the actual publish execution as a separate task.
+  // Manual mode: do nothing (operator triggers publish from console).
+  if (publishMode === "scheduled" && scheduledAtIso) {
+    const ms = Date.parse(scheduledAtIso);
+    const delaySec = Number.isFinite(ms) ? Math.max(0, Math.floor((ms - Date.now()) / 1000)) : 0;
+    const atMin = Number.isFinite(ms) ? Math.floor(ms / 60_000) : 0;
+    await enqueueTask({
+      queue: "light",
+      ignoreAlreadyExists: true,
+      scheduleTimeSecFromNow: delaySec,
+      payload: {
+        ...payload,
+        taskType: "publish_execute",
+        scheduledAt: scheduledAtIso,
+        idempotencyKey: `publish_execute:${siteId}:${payload.runDate}:${articleId}:at${atMin}${
+          runTag && runTag !== "default" ? `:${runTag}` : ""
+        }`
+      }
+    });
+  }
 }

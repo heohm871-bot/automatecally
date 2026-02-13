@@ -46,9 +46,17 @@ function applyQaOverride(base: QaResult): QaResult {
   return base;
 }
 
+function getRunTag(payload: ArticleQaPayload) {
+  const raw = (payload as unknown as { runTag?: unknown })?.runTag;
+  if (typeof raw !== "string") return "";
+  const s = raw.trim().slice(0, 24);
+  return /^[a-zA-Z0-9_-]+$/.test(s) ? s : "";
+}
+
 export async function articleQa(payload: ArticleQaPayload) {
   const { siteId, articleId } = payload;
   const settings = await getGlobalSettings();
+  const runTag = getRunTag(payload);
 
   const aRef = db().doc(`articles/${articleId}`);
   const aSnap = await aRef.get();
@@ -79,7 +87,9 @@ export async function articleQa(payload: ArticleQaPayload) {
           ...payload,
           taskType: "article_qa_fix",
           qaFixAttempt: fixAttempt,
-          idempotencyKey: `article_qa_fix:${siteId}:${articleId}:attempt-${fixAttempt}`,
+          idempotencyKey: `article_qa_fix:${siteId}:${payload.runDate}:${articleId}:attempt-${fixAttempt}${
+            runTag ? `:${runTag}` : ""
+          }`,
           articleId
         }
       });
@@ -94,7 +104,7 @@ export async function articleQa(payload: ArticleQaPayload) {
       payload: {
         ...payload,
         taskType: "topcard_render",
-        idempotencyKey: `topcard_render:${siteId}:${articleId}`,
+        idempotencyKey: `topcard_render:${siteId}:${payload.runDate}:${articleId}${runTag ? `:${runTag}` : ""}`,
         articleId
       }
     });
@@ -107,7 +117,7 @@ export async function articleQa(payload: ArticleQaPayload) {
       payload: {
         ...payload,
         taskType: "image_generate",
-        idempotencyKey: `image_generate:${siteId}:${articleId}`,
+        idempotencyKey: `image_generate:${siteId}:${payload.runDate}:${articleId}${runTag ? `:${runTag}` : ""}`,
         articleId
       }
     });
@@ -120,7 +130,7 @@ export async function articleQa(payload: ArticleQaPayload) {
       payload: {
         ...payload,
         taskType: "article_package",
-        idempotencyKey: `article_package:${siteId}:${articleId}`,
+        idempotencyKey: `article_package:${siteId}:${payload.runDate}:${articleId}${runTag ? `:${runTag}` : ""}`,
         articleId
       }
     });

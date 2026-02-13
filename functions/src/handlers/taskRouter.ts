@@ -15,6 +15,7 @@ import { bodyGenerate } from "./tasks/bodyGenerate";
 import { imageGenerate } from "./tasks/imageGenerate";
 import { kwCollect } from "./tasks/kwCollect";
 import { kwScore } from "./tasks/kwScore";
+import { publishExecute } from "./tasks/publishExecute";
 import { titleGenerate } from "./tasks/titleGenerate";
 import { topcardRender } from "./tasks/topcardRender";
 
@@ -55,6 +56,16 @@ function enforceProdRunTagPolicy(payload: AnyTaskPayload) {
   }
 }
 
+function todayKstDate() {
+  // "en-CA" reliably produces YYYY-MM-DD
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).format(new Date());
+}
+
 export async function routeTask(payload: AnyTaskPayload) {
   const runRef = db().doc(`taskRuns/${payload.idempotencyKey}`);
   const runSnap = await runRef.get();
@@ -79,6 +90,7 @@ export async function routeTask(payload: AnyTaskPayload) {
     else if (payload.taskType === "topcard_render") await topcardRender(payload);
     else if (payload.taskType === "image_generate") await imageGenerate(payload);
     else if (payload.taskType === "article_package") await articlePackage(payload);
+    else if (payload.taskType === "publish_execute") await publishExecute(payload);
     else if (payload.taskType === "analyzer_daily") await analyzerDaily(payload);
     else if (payload.taskType === "advisor_weekly_global") await advisorWeeklyGlobal(payload);
     else throw new Error("Unknown taskType");
@@ -105,6 +117,16 @@ export async function routeTask(payload: AnyTaskPayload) {
     const retryLimit = Math.min(1, Math.max(0, settings.pipeline.retrySameDayMax));
     const nonRetryable = errorText.startsWith("NON_RETRYABLE:");
     if (!nonRetryable && payload.retryCount < retryLimit) {
+      // Only retry tasks for the same runDate (KST) to avoid stale retries crossing midnight.
+      const today = todayKstDate();
+      if (payload.runDate !== today) {
+        await recordArticlePipelineEvent(payload, {
+          type: "retry_skipped",
+          detail: `runDate_mismatch:${payload.runDate}!=${today}`
+        });
+        return;
+      }
+
       const retryQueue =
         payload.taskType === "body_generate" || payload.taskType === "image_generate" ? "heavy" : "light";
       const retryDelaySec = settings.pipeline.retryDelaySec;

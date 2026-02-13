@@ -41,6 +41,8 @@ function makeHashtags12(keyword: string) {
 export async function articleQaFix(payload: ArticleQaFixPayload) {
   const { siteId, articleId } = payload;
   const settings = await getGlobalSettings();
+  const runTagRaw = (payload as unknown as { runTag?: unknown })?.runTag;
+  const runTag = typeof runTagRaw === "string" && runTagRaw.trim() ? runTagRaw.trim().slice(0, 24) : "";
 
   const aRef = db().doc(`articles/${articleId}`);
   const aSnap = await aRef.get();
@@ -147,7 +149,9 @@ export async function articleQaFix(payload: ArticleQaFixPayload) {
     payload: {
       ...payload,
       taskType: "article_qa",
-      idempotencyKey: `article_qa:${siteId}:${articleId}:after-fix-${nextFixCount}`,
+      idempotencyKey: `article_qa:${siteId}:${payload.runDate}:${articleId}:after-fix-${nextFixCount}${
+        runTag ? `:${runTag}` : ""
+      }`,
       articleId
     }
   });

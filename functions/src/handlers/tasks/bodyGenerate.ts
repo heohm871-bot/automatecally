@@ -176,7 +176,7 @@ ${detailBlock}
     payload: {
       ...payload,
       taskType: "article_qa",
-      idempotencyKey: `article_qa:${siteId}:${articleId}`,
+      idempotencyKey: `article_qa:${siteId}:${payload.runDate}:${articleId}`,
       articleId
     }
   });

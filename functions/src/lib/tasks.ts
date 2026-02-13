@@ -10,6 +10,36 @@ export type EnqueueArgs = {
   ignoreAlreadyExists?: boolean;
 };
 
+function assertIdempotencyKey(payload: unknown) {
+  const raw = (payload ?? {}) as Record<string, unknown>;
+  const taskType = typeof raw.taskType === "string" ? raw.taskType.trim() : "";
+  const siteId = typeof raw.siteId === "string" ? raw.siteId.trim() : "";
+  const runDate = typeof raw.runDate === "string" ? raw.runDate.trim() : "";
+  const idempotencyKey = typeof raw.idempotencyKey === "string" ? raw.idempotencyKey.trim() : "";
+
+  if (!taskType || !siteId || !runDate || !idempotencyKey) {
+    throw new Error("invalid task payload: missing taskType/siteId/runDate/idempotencyKey");
+  }
+  if (!idempotencyKey.startsWith(`${taskType}:`)) {
+    throw new Error(`invalid idempotencyKey: must start with "${taskType}:"`);
+  }
+  if (!idempotencyKey.includes(`:${siteId}`)) {
+    throw new Error(`invalid idempotencyKey: must include siteId (${siteId})`);
+  }
+  if (!idempotencyKey.includes(`:${runDate}`)) {
+    throw new Error(`invalid idempotencyKey: must include runDate (${runDate})`);
+  }
+
+  const articleId = typeof raw.articleId === "string" ? raw.articleId.trim() : "";
+  if (articleId && !idempotencyKey.includes(articleId)) {
+    throw new Error(`invalid idempotencyKey: must include articleId (${articleId})`);
+  }
+  const keywordId = typeof raw.keywordId === "string" ? raw.keywordId.trim() : "";
+  if (keywordId && !idempotencyKey.includes(keywordId)) {
+    throw new Error(`invalid idempotencyKey: must include keywordId (${keywordId})`);
+  }
+}
+
 function getPayloadMeta(payload: unknown) {
   const raw = (payload ?? {}) as Record<string, unknown>;
   const idempotencyKey = typeof raw.idempotencyKey === "string" ? raw.idempotencyKey : "";
@@ -52,11 +82,13 @@ export async function enqueueTask(args: EnqueueArgs) {
       import("../handlers/taskRouter")
     ]);
     const payload = AnyTaskPayloadSchema.parse(args.payload);
+    assertIdempotencyKey(payload);
     const timeoutMs = Number(process.env.INLINE_TASK_TIMEOUT_MS ?? 45_000);
     await withTimeout(routeTask(payload), timeoutMs, "E2E_TASK_TIMEOUT", payload.taskType);
     return;
   }
 
+  assertIdempotencyKey(args.payload);
   const { getEnv } = await import("./env");
   const ENV = getEnv();
   const queueName = args.queue === "heavy" ? ENV.QUEUE_HEAVY : ENV.QUEUE_LIGHT;

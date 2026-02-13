@@ -74,6 +74,13 @@ export const ArticlePackagePayloadSchema = TaskBaseSchema.extend({
 }).passthrough();
 export type ArticlePackagePayload = z.infer<typeof ArticlePackagePayloadSchema>;
 
+export const PublishExecutePayloadSchema = TaskBaseSchema.extend({
+  taskType: z.literal("publish_execute"),
+  articleId: z.string(),
+  scheduledAt: z.string().optional()
+}).passthrough();
+export type PublishExecutePayload = z.infer<typeof PublishExecutePayloadSchema>;
+
 export const AnalyzerDailyPayloadSchema = TaskBaseSchema.extend({
   taskType: z.literal("analyzer_daily")
 }).passthrough();
@@ -96,6 +103,7 @@ export const AnyTaskPayloadSchema = z.discriminatedUnion("taskType", [
   TopcardRenderPayloadSchema,
   ImageGeneratePayloadSchema,
   ArticlePackagePayloadSchema,
+  PublishExecutePayloadSchema,
   AnalyzerDailyPayloadSchema,
   AdvisorWeeklyGlobalPayloadSchema
 ]);
