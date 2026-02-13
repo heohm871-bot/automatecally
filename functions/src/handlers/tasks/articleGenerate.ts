@@ -73,6 +73,7 @@ export async function articleGenerate(payload: ArticleGeneratePayload) {
       <p>FAQ: 자주 묻는 질문</p>
     </div>`,
     status: "queued",
+    lifecycle: "draft",
     createdAt: new Date()
   });
 

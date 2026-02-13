@@ -25,6 +25,7 @@ type ArticleRow = {
   id: string;
   titleFinal?: string;
   status?: string;
+  lifecycle?: string;
   titleSimMax?: number;
   packagePath?: string;
   k12?: { main?: string[]; longtail?: string[] };
@@ -43,6 +44,14 @@ function statusClass(status?: string) {
   if (status === "qa_failed") return "bg-rose-100 text-rose-800";
   if (status === "generating") return "bg-amber-100 text-amber-800";
   if (status === "queued") return "bg-slate-100 text-slate-700";
+  return "bg-slate-100 text-slate-700";
+}
+
+function lifecycleClass(lifecycle?: string) {
+  if (lifecycle === "promoted") return "bg-fuchsia-100 text-fuchsia-800";
+  if (lifecycle === "archived") return "bg-zinc-200 text-zinc-800";
+  if (lifecycle === "staged") return "bg-orange-100 text-orange-800";
+  if (lifecycle === "draft") return "bg-slate-100 text-slate-700";
   return "bg-slate-100 text-slate-700";
 }
 
@@ -153,9 +162,19 @@ export default function ArticlesPage() {
                       <p className="text-sm font-medium">{a.titleFinal ?? "(untitled)"}</p>
                       <p className="text-xs text-slate-500">{a.id}</p>
                     </div>
-                    <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${statusClass(a.status)}`}>
-                      {a.status ?? "unknown"}
-                    </span>
+                    <div className="flex flex-wrap items-center justify-end gap-2">
+                      <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${statusClass(a.status)}`}>
+                        {a.status ?? "unknown"}
+                      </span>
+                      {a.lifecycle ? (
+                        <span
+                          className={`rounded-full px-2.5 py-1 text-xs font-medium ${lifecycleClass(a.lifecycle)}`}
+                          title="정본/승격/보관 같은 운영 거버넌스 축"
+                        >
+                          {a.lifecycle}
+                        </span>
+                      ) : null}
+                    </div>
                   </div>
                 </li>
               ))}
@@ -174,6 +193,11 @@ export default function ArticlesPage() {
                     <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${statusClass(selected.status)}`}>
                       {selected.status ?? "unknown"}
                     </span>
+                    {selected.lifecycle ? (
+                      <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${lifecycleClass(selected.lifecycle)}`}>
+                        lifecycle: {selected.lifecycle}
+                      </span>
+                    ) : null}
                     <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs text-slate-700">
                       titleSim: {typeof selected.titleSimMax === "number" ? selected.titleSimMax.toFixed(3) : "n/a"}
                     </span>

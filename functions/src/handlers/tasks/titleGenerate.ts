@@ -12,14 +12,38 @@ import { createHash } from "node:crypto";
 type KeywordDoc = { text?: string };
 type ArticleDoc = { titleFinal?: string };
 
-function makeArticleId(siteId: string, keywordId: string, runDate: string) {
-  const digest = createHash("sha256").update(`${siteId}:${keywordId}:${runDate}`).digest("hex").slice(0, 24);
+function makeArticleId(siteId: string, keywordId: string, runDate: string, runTag: string) {
+  const suffix = runTag && runTag !== "default" ? `:${runTag}` : "";
+  const digest = createHash("sha256").update(`${siteId}:${keywordId}:${runDate}${suffix}`).digest("hex").slice(0, 24);
   return `a_${digest}`;
 }
 
 const A = (shock: string, situation: string, kw: string) => `"${shock}" ${situation} ${kw}`;
 const B = (lack: string, num: number, kw: string) => `${lack} ${num}가지 ${kw}`;
 const C = (place: string, target: string, kw: string) => `${place}에서 ${target} ${kw}`;
+
+function stripEmoji(s: string) {
+  try {
+    // Node 22 supports Unicode property escapes, but keep it defensive.
+    return s.replace(/\p{Extended_Pictographic}/gu, "");
+  } catch {
+    return s;
+  }
+}
+
+function finalizeTitle(raw: string, keyword: string) {
+  const kw = String(keyword ?? "").replace(/\s+/g, " ").trim();
+  let t = String(raw ?? "")
+    .replace(/\*\*/g, "") // avoid markdown bold markers
+    .replace(/\s+/g, " ")
+    .trim();
+  t = stripEmoji(t).replace(/\s+/g, " ").trim();
+
+  if (kw && !t.endsWith(kw)) t = `${t} ${kw}`.replace(/\s+/g, " ").trim();
+  // Hard cut (recommended). Keep the end so the keyword stays at the tail.
+  if (t.length > 60) t = t.slice(t.length - 60).trim();
+  return t;
+}
 
 function buildCandidates(keyword: string) {
   const shocks = ["충격", "반전", "실화", "의외"];
@@ -40,14 +64,16 @@ function buildCandidates(keyword: string) {
   out.push(B(lacks[1], 5, keyword));
   out.push(C(places[0], targets[0], keyword));
   out.push(C(places[1], targets[1], keyword));
-  out.push(`${keyword} 비교: 딱 1개만 고르면 됩니다`);
-  out.push(`${keyword} 방법: 초보가 바로 써먹는 순서`);
-  out.push(`${keyword} 주의: 이 2가지만은 피하세요`);
-  out.push(`${keyword} 후기: 생각보다 갈리는 포인트`);
-  out.push(`${keyword} 정리: 지금 필요한 건 이것뿐`);
-  out.push(`${keyword} 가성비: 돈 아끼는 선택지 3개`);
+  out.push(`딱 1개만 고르면 됩니다 ${keyword}`);
+  out.push(`초보가 바로 써먹는 순서 ${keyword}`);
+  out.push(`이 2가지만은 피하세요 ${keyword}`);
+  out.push(`생각보다 갈리는 포인트 ${keyword}`);
+  out.push(`지금 필요한 건 이것뿐 ${keyword}`);
+  out.push(`돈 아끼는 선택지 3개 ${keyword}`);
 
-  return out.map((t) => t.replace(/\s+/g, " ").trim());
+  const normalized = out.map((t) => t.replace(/\s+/g, " ").trim());
+  const uniq = Array.from(new Set(normalized.map((t) => finalizeTitle(t, keyword))));
+  return uniq;
 }
 
 export async function titleGenerate(payload: TitleGeneratePayload) {
@@ -59,6 +85,8 @@ export async function titleGenerate(payload: TitleGeneratePayload) {
   const kw = (kwSnap.data() ?? {}) as KeywordDoc;
   const keyword = String(kw.text ?? "").trim();
   const intent = detectIntent(keyword);
+  const runTagRaw = (payload as unknown as { runTag?: unknown })?.runTag;
+  const runTag = typeof runTagRaw === "string" && runTagRaw.trim() ? runTagRaw.trim().slice(0, 24) : "default";
 
   const articlesRef = db().collection("articles");
   const oldTitles: string[] = [];
@@ -74,27 +102,34 @@ export async function titleGenerate(payload: TitleGeneratePayload) {
   }
 
   const candidates = buildCandidates(keyword);
-  const articleId = makeArticleId(siteId, keywordId, payload.runDate);
+  const articleId = makeArticleId(siteId, keywordId, payload.runDate, runTag);
   const aRef = db().doc(`articles/${articleId}`);
   const existingSnap = await aRef.get();
   const existing = (existingSnap.data() ?? {}) as { llmUsage?: unknown };
+  const existingLifecycle = existingSnap.exists ? (existingSnap.get("lifecycle") as unknown) : undefined;
   const llmUsage = getLlmUsage(existing.llmUsage);
   const useLlm = Boolean(process.env.OPENAI_API_KEY) && canUseLlm("title", llmUsage, settings.caps);
   const nextLlmUsage = useLlm ? bumpLlmUsage(llmUsage, "title") : llmUsage;
 
-  let picked = candidates[0];
+  let picked = candidates[0] ?? finalizeTitle(keyword, keyword);
   let pickedSim = 1;
+  let pickedLenScore = 999;
 
-  for (const t of candidates) {
+  for (const t0 of candidates) {
+    const t = finalizeTitle(t0, keyword);
     const sim = maxTitleSimilarity(t, oldTitles);
+    const len = t.length;
+    const lenScore = len >= 28 && len <= 38 ? 0 : len <= 60 ? 1 : 2;
     if (sim < 0.3) {
       picked = t;
       pickedSim = sim;
+      pickedLenScore = lenScore;
       break;
     }
-    if (sim < pickedSim) {
+    if (sim < pickedSim || (sim === pickedSim && lenScore < pickedLenScore)) {
       picked = t;
       pickedSim = sim;
+      pickedLenScore = lenScore;
     }
   }
 
@@ -108,7 +143,10 @@ export async function titleGenerate(payload: TitleGeneratePayload) {
     const system = [
       "너는 블로그 제목 생성기다.",
       "반드시 JSON 스키마를 따르고 한국어 제목 1개만 생성한다.",
-      "과장/허위 표현을 피하고 자연스러운 클릭 유도형 제목을 만든다."
+      "과장/허위 표현을 피하고 자연스러운 클릭 유도형 제목을 만든다.",
+      "제목은 60자 이내로 유지한다.",
+      "제목의 마지막은 반드시 메인 키워드로 끝나야 한다.",
+      "이모지와 마크다운(**) 표기는 사용하지 않는다."
     ].join(" ");
     const user = [
       `키워드: ${keyword}`,
@@ -132,7 +170,7 @@ export async function titleGenerate(payload: TitleGeneratePayload) {
         ttlDays: 30
       });
 
-      const llmTitle = out.title.trim();
+      const llmTitle = finalizeTitle(out.title.trim(), keyword);
       if (llmTitle) {
         const llmSim = maxTitleSimilarity(llmTitle, oldTitles);
         if (llmSim < 0.8) {
@@ -159,7 +197,7 @@ export async function titleGenerate(payload: TitleGeneratePayload) {
       siteId,
       keywordId,
       runDate: payload.runDate,
-      dedupeKey: `${siteId}:${keywordId}:${payload.runDate}`,
+      dedupeKey: `${siteId}:${keywordId}:${payload.runDate}${runTag && runTag !== "default" ? `:${runTag}` : ""}`,
       intent,
       titleCandidates: candidates,
       titleFinal: picked,
@@ -167,6 +205,8 @@ export async function titleGenerate(payload: TitleGeneratePayload) {
       titleNeedsRegeneration: pickedSim > regenThreshold,
       titleRegenCandidates: pickedSim > regenThreshold ? regenCandidates : [],
       status: "queued",
+      // Keep governance separate from pipeline status. Only default when missing; never overwrite.
+      ...(typeof existingLifecycle === "string" ? {} : { lifecycle: "draft" }),
       llmUsage: nextLlmUsage,
       createdAt: existingSnap.exists ? existingSnap.get("createdAt") ?? new Date() : new Date(),
       updatedAt: new Date(),
