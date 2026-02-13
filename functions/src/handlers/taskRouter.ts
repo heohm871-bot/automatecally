@@ -71,7 +71,8 @@ export async function routeTask(payload: AnyTaskPayload) {
   const runSnap = await runRef.get();
   if (runSnap.exists && runSnap.data()?.status === "success") return;
 
-  const lockId = `lock:${payload.idempotencyKey}`;
+  // Include retryCount so an immediate retry (inline execution) doesn't deadlock on the same lock doc.
+  const lockId = `lock:${payload.idempotencyKey}:r${payload.retryCount}`;
   await acquireLock(payload.siteId, lockId, 10 * 60);
   const startedAt = Date.now();
   await recordTaskSnapshot(payload, "running");
