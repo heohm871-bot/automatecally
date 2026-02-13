@@ -1,6 +1,7 @@
 import { bucket, db } from "../../lib/admin";
 import { isE2eSkipStorage } from "../../lib/e2eFlags";
 import { getGlobalSettings } from "../../lib/globalSettings";
+import { nextSpecificWindowUtcMs, nextWindowUtcMs, parseHm } from "../../lib/publishSchedule";
 import { moderateArticleContent } from "../../lib/llm/moderation";
 import type { ArticlePackagePayload } from "../schema";
 
@@ -12,6 +13,41 @@ type ArticleDoc = {
   html?: string;
 };
 
+type SiteDoc = {
+  publishMode?: "scheduled" | "manual";
+  publishMinIntervalMin?: number;
+  publishWindows?: string[];
+  nextPublishAt?: string | null;
+};
+
+function getScheduleSlot(payload: ArticlePackagePayload): number | null {
+  const raw = (payload as unknown as { scheduleSlot?: unknown })?.scheduleSlot;
+  if (typeof raw !== "number" || !Number.isFinite(raw)) return null;
+  const slot = Math.floor(raw);
+  if (slot < 1 || slot > 6) return null;
+  return slot;
+}
+
+function parseIsoMs(v: unknown): number | null {
+  if (typeof v !== "string" || !v) return null;
+  const ms = Date.parse(v);
+  return Number.isNaN(ms) ? null : ms;
+}
+
+function getRunTag(payload: ArticlePackagePayload) {
+  const raw = (payload as unknown as { runTag?: unknown })?.runTag;
+  if (typeof raw !== "string") return "";
+  const s = raw.trim().slice(0, 24);
+  return /^[a-zA-Z0-9_-]+$/.test(s) ? s : "";
+}
+
+function packageBasePath(siteId: string, articleId: string, runTag: string) {
+  // Default run (no runTag) writes to canonical path.
+  if (!runTag || runTag === "default") return `sites/${siteId}/articles/${articleId}/package`;
+  // Rerun/backfill writes to a separate, explicit path.
+  return `sites/${siteId}/articles/${articleId}/package_${runTag}`;
+}
+
 export async function articlePackage(payload: ArticlePackagePayload) {
   const { siteId, articleId } = payload;
   const settings = await getGlobalSettings();
@@ -20,9 +56,14 @@ export async function articlePackage(payload: ArticlePackagePayload) {
   if (!aSnap.exists) throw new Error("article not found");
   const a = (aSnap.data() ?? {}) as ArticleDoc;
 
+  const runTag = getRunTag(payload);
+
   const meta = {
     siteId,
     articleId,
+    runDate: payload.runDate,
+    traceId: payload.traceId,
+    runTag: runTag || null,
     title: a.titleFinal,
     intent: a.intent,
     hashtags12: a.hashtags12,
@@ -30,13 +71,11 @@ export async function articlePackage(payload: ArticlePackagePayload) {
     createdAt: new Date().toISOString()
   };
 
-  const base = `sites/${siteId}/articles/${articleId}/package`;
+  const base = packageBasePath(siteId, articleId, runTag);
   const siteSnap = await db().doc(`sites/${siteId}`).get();
-  const site = (siteSnap.data() ?? {}) as { publishMode?: "scheduled" | "manual"; publishMinIntervalMin?: number };
+  const site = (siteSnap.data() ?? {}) as SiteDoc;
   const publishMode = site.publishMode ?? settings.pipeline.publishDefault;
   const publishMinIntervalMin = site.publishMinIntervalMin ?? settings.pipeline.publishMinIntervalMin;
-  const scheduledAtIso =
-    publishMode === "scheduled" ? new Date(Date.now() + publishMinIntervalMin * 60 * 1000).toISOString() : null;
 
   const moderation = await moderateArticleContent({
     title: String(a.titleFinal ?? ""),
@@ -69,6 +108,35 @@ export async function articlePackage(payload: ArticlePackagePayload) {
     });
   }
 
+  let scheduledAtIso: string | null = null;
+  if (publishMode === "scheduled") {
+    const slot = getScheduleSlot(payload);
+    const preferredWindow =
+      slot && Array.isArray(site.publishWindows) ? String(site.publishWindows[slot - 1] ?? "").trim() : "";
+    const preferredHm = preferredWindow ? parseHm(preferredWindow) : null;
+
+    const siteRef = db().doc(`sites/${siteId}`);
+    await db().runTransaction(async (tx) => {
+      const sSnap = await tx.get(siteRef);
+      const s = (sSnap.data() ?? {}) as SiteDoc;
+      const nextMs = parseIsoMs(s.nextPublishAt);
+
+      const baseUtcMs = Date.now() + publishMinIntervalMin * 60 * 1000;
+      const effectiveBase = Math.max(baseUtcMs, nextMs ?? 0);
+
+      const windows = Array.isArray(s.publishWindows) ? s.publishWindows : [];
+      const pickedUtcMs = preferredHm
+        ? nextSpecificWindowUtcMs(effectiveBase, preferredHm)
+        : windows.length > 0
+          ? nextWindowUtcMs(effectiveBase, windows)
+          : effectiveBase;
+
+      scheduledAtIso = new Date(pickedUtcMs).toISOString();
+      const nextPublishAt = new Date(pickedUtcMs + publishMinIntervalMin * 60 * 1000).toISOString();
+      tx.set(siteRef, { nextPublishAt, updatedAt: new Date() }, { merge: true });
+    });
+  }
+
   await db()
     .doc(`articles/${articleId}`)
     .set(
@@ -80,6 +148,7 @@ export async function articlePackage(payload: ArticlePackagePayload) {
           minIntervalMin: publishMinIntervalMin,
           scheduledAt: scheduledAtIso
         },
+        runTag: runTag || null,
         moderation
       },
       { merge: true }
