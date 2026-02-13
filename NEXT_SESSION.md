@@ -10,6 +10,8 @@
   - A 브랜치: `feat/lifecycle-status-split` (push 완료, PR 생성 가능)
   - B 변경은 별도 커밋들로 분해해 `feat/pipeline-images-qa-fix`로 복구(cherry-pick) 완료
 - 주의: `infra/firestore.rules` 권한 정책 변경이 포함되어 있어 prod 반영 전 검토 필요
+  - `scripts/native-cutover-check.sh`는 이제 `INFRA_ENV=prod`로 rules/indexes를 base 템플릿에 sync 후 deploy 하도록 보강(실수 방지)
+  - A 브랜치 기준 검증: `npm --prefix functions test` 통과, `npm --prefix apps/web run build` 통과
 
 ## 2026-02-11
 
