@@ -1,0 +1,55 @@
+name: ops-deploy-blog
+
+on:
+  workflow_dispatch:
+    inputs:
+      deploy_functions:
+        description: "Deploy Cloud Functions"
+        required: true
+        type: boolean
+        default: true
+      deploy_indexes:
+        description: "Deploy Firestore indexes"
+        required: true
+        type: boolean
+        default: true
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Assert deploy secrets
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+        run: |
+          if [ -z "${FIREBASE_TOKEN}" ]; then
+            echo "Missing secrets.FIREBASE_TOKEN (required to run firebase deploy in CI)."
+            exit 1
+          fi
+
+      - name: Deploy (Functions)
+        if: inputs.deploy_functions
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+        run: firebase deploy --project blog --only functions --token "$FIREBASE_TOKEN"
+
+      - name: Deploy (Firestore indexes)
+        if: inputs.deploy_indexes
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+        run: firebase deploy --project blog --only firestore:indexes --token "$FIREBASE_TOKEN"
+
