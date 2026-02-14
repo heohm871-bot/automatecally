@@ -1,7 +1,23 @@
 import { getAdmin, db } from "./admin";
 import type { AnyTaskPayload } from "../handlers/schema";
 
-type TaskEventStatus = "running" | "success" | "failed";
+type TaskEventStatus = "queued" | "running" | "success" | "failed";
+
+function toState(status: TaskEventStatus) {
+  if (status === "success") return "succeeded";
+  return status;
+}
+
+function extractErrorCode(errorText: string) {
+  const s = String(errorText ?? "").trim();
+  if (!s) return null;
+  if (s.startsWith("NON_RETRYABLE:")) {
+    const rest = s.slice("NON_RETRYABLE:".length);
+    const code = rest.split(":")[0]?.trim();
+    return code || "NON_RETRYABLE";
+  }
+  return s.split(":")[0]?.trim() || "UNKNOWN";
+}
 
 function getArticleId(payload: AnyTaskPayload): string | null {
   const maybe = (payload as Record<string, unknown>).articleId;
@@ -16,18 +32,28 @@ export async function recordTaskSnapshot(
   const now = new Date();
   const runRef = db().doc(`taskRuns/${payload.idempotencyKey}`);
 
+  const attemptCount = payload.retryCount + 1;
+  const errorText = String(args?.error ?? "").trim();
+  const lastErrorCode = status === "failed" ? extractErrorCode(errorText) : null;
+  const lastErrorMessage = status === "failed" ? (errorText || null) : null;
+
   await runRef.set(
     {
       siteId: payload.siteId,
       traceId: payload.traceId,
       taskType: payload.taskType,
       status,
+      state: toState(status),
       retryCount: payload.retryCount,
+      attemptCount,
       runDate: payload.runDate,
       updatedAt: now,
+      ...(status === "queued" ? { queuedAt: now } : {}),
       ...(status === "running" ? { startedAt: now } : {}),
       ...(args?.durationMs !== undefined ? { durationMs: args.durationMs } : {}),
-      ...(args?.error ? { error: args.error } : {})
+      ...(args?.error ? { error: args.error } : {}),
+      ...(lastErrorCode ? { lastErrorCode } : {}),
+      ...(lastErrorMessage ? { lastErrorMessage } : {})
     },
     { merge: true }
   );
@@ -39,20 +65,26 @@ export async function recordTaskSnapshot(
     at: now.toISOString(),
     taskType: payload.taskType,
     status,
+    state: toState(status),
     traceId: payload.traceId,
     idempotencyKey: payload.idempotencyKey,
     retryCount: payload.retryCount,
+    attemptCount,
     ...(args?.durationMs !== undefined ? { durationMs: args.durationMs } : {}),
-    ...(args?.error ? { error: args.error } : {})
+    ...(args?.error ? { error: args.error } : {}),
+    ...(lastErrorCode ? { lastErrorCode } : {})
   };
   const traceEntry = {
     task: payload.taskType,
     at: now.toISOString(),
-    ok: status === "running" ? null : status === "success",
+    ok: status === "queued" || status === "running" ? null : status === "success",
     status,
+    state: toState(status),
     traceId: payload.traceId,
     retryCount: payload.retryCount,
-    ...(args?.error ? { error: args.error } : {})
+    attemptCount,
+    ...(args?.error ? { error: args.error } : {}),
+    ...(lastErrorCode ? { lastErrorCode } : {})
   };
 
   await db()
@@ -61,6 +93,7 @@ export async function recordTaskSnapshot(
       {
         pipelineLastTask: payload.taskType,
         pipelineLastStatus: status,
+        pipelineLastState: toState(status),
         pipelineUpdatedAt: now,
         pipelineHistory: getAdmin().firestore.FieldValue.arrayUnion(timelineEntry),
         trace: getAdmin().firestore.FieldValue.arrayUnion(traceEntry)
