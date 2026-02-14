@@ -17,6 +17,7 @@
     "settings:seed": "npm run build && node lib/functions/src/dev/seedGlobalSettings.js",
     "analyzer:smoke": "npm run build && node lib/functions/src/dev/analyzerDailySmoke.js",
     "usage:report": "npm run build && node lib/functions/src/dev/usageReport.js",
+    "cost:recompute": "npm run build && node lib/functions/src/dev/costRecompute.js",
     "e2e:cleanup": "npm run build && node lib/functions/src/dev/cleanupE2e.js",
     "e2e:dump": "npm run build && node lib/functions/src/dev/dumpE2eData.js",
     "e2e:check": "INFRA_ENV=staging npm run indexes:check && FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 E2E_CLEANUP=1 npm run e2e:once",

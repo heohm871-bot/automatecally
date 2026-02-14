@@ -44,6 +44,13 @@ Smoke checklist (manual, production auth varies):
 npm run ops:smoke:blog
 ```
 
+Cost recompute (dryRun by default, overwrites `costDaily/*` in apply mode):
+
+```bash
+npm --prefix functions run cost:recompute -- --start=2026-02-01 --end=2026-02-14
+npm --prefix functions run cost:recompute -- --start=2026-02-01 --end=2026-02-14 --dryRun=0
+```
+
 Rollback (minimal)
 - Revert the merge commit(s) in GitHub (new PR) and redeploy:
   - `firebase deploy --project blog --only functions,firestore:indexes`
