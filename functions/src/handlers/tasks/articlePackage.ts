@@ -44,6 +44,12 @@ function getRunTag(payload: ArticlePackagePayload) {
   return /^[a-zA-Z0-9_-]+$/.test(s) ? s : "";
 }
 
+function isOpsSmoke(payload: ArticlePackagePayload) {
+  // Extra fields are allowed by schema (passthrough). Keep it boolean-only.
+  const raw = (payload as unknown as { opsSmoke?: unknown })?.opsSmoke;
+  return raw === true;
+}
+
 function packageBasePath(siteId: string, articleId: string, runTag: string) {
   // Default run (no runTag) writes to canonical path.
   if (!runTag || runTag === "default") return `sites/${siteId}/articles/${articleId}/package`;
@@ -173,6 +179,8 @@ export async function articlePackage(payload: ArticlePackagePayload) {
 
   // Schedule the actual publish execution as a separate task.
   // Manual mode: do nothing (operator triggers publish from console).
+  // Ops smoke: never enqueue publish, even if site is scheduled mode.
+  if (isOpsSmoke(payload)) return;
   if (publishMode === "scheduled" && scheduledAtIso) {
     const ms = Date.parse(scheduledAtIso);
     const delaySec = Number.isFinite(ms) ? Math.max(0, Math.floor((ms - Date.now()) / 1000)) : 0;

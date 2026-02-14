@@ -53,3 +53,12 @@ jobs:
           FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
         run: firebase deploy --project blog --only firestore:indexes --token "$FIREBASE_TOKEN"
 
+      - name: Post-deploy smoke (prod)
+        env:
+          OPS_FIREBASE_PROJECT_ID: blog-native-260212
+          OPS_FUNCTIONS_REGION: us-central1
+          OPS_SECRET: ${{ secrets.OPS_SECRET }}
+          OPS_SMOKE_SITE_ID: ${{ secrets.OPS_SMOKE_SITE_ID }}
+          OPS_WEB_BASE_URL: ${{ secrets.OPS_WEB_BASE_URL }}
+          OPS_WEB_HEALTH_TOKEN: ${{ secrets.OPS_WEB_HEALTH_TOKEN }}
+        run: bash scripts/ops/post-deploy-smoke.sh
