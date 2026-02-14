@@ -18,7 +18,7 @@ export const enqueueDailyPipelines = onSchedule(
     const sitesSnap = await db().collection("sites").get();
     const settings = await getGlobalSettings();
 
-    const runDate = new Date().toISOString().slice(0, 10);
+    const runDate = kstDayKey(new Date());
     for (const doc of sitesSnap.docs) {
       const siteId = doc.id;
       const site = (doc.data() ?? {}) as { isEnabled?: boolean; dailyTarget?: number };
@@ -170,8 +170,16 @@ export const opsWeeklyReport = onSchedule(
 
     // cost trend: sum of costDaily over the 7 days, and delta vs previous 7 days
     const costSnaps = await Promise.all(days.map((k) => db().doc(`costDaily/${k}`).get()));
+    const missingCostDays: string[] = [];
     const costs = days.map((k, idx) => {
-      const data = (costSnaps[idx].data() ?? {}) as { estimatedCostUsd?: unknown; llmCallCount?: unknown; estimatedTokens?: unknown; updatedAt?: unknown };
+      const snap = costSnaps[idx];
+      if (!snap.exists) missingCostDays.push(k);
+      const data = (snap.data() ?? {}) as {
+        estimatedCostUsd?: unknown;
+        llmCallCount?: unknown;
+        estimatedTokens?: unknown;
+        updatedAt?: unknown;
+      };
       return {
         dayKey: k,
         estimatedCostUsd: toNum(data.estimatedCostUsd),
@@ -213,6 +221,7 @@ export const opsWeeklyReport = onSchedule(
           cost: {
             totalUsd: costTotalUsd,
             deltaUsdVsPrev7d: costDeltaUsd,
+            missingDays: missingCostDays,
             series: costs
           },
           createdAt: new Date(),

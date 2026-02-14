@@ -32,7 +32,7 @@ function requireOpsAuth(req: Request, res: Response) {
   const got = String(req.get("X-Ops-Secret") ?? req.get("X-Task-Secret") ?? "").trim();
   const want = getTaskSecret();
   if (!want || got !== want) {
-    res.status(403).json({ ok: false, error: "forbidden" });
+    res.status(403).json({ ok: false, lastErrorCode: "forbidden", lastErrorMessage: "forbidden" });
     return false;
   }
   return true;
@@ -45,16 +45,19 @@ function isIsoDayKey(s: string) {
 export const opsHealth = onRequest(async (req, res) => {
   if (!requireOpsAuth(req, res)) return;
   if (req.method !== "GET") {
-    res.status(405).json({ ok: false, error: "method_not_allowed" });
+    res.status(405).json({ ok: false, lastErrorCode: "method_not_allowed", lastErrorMessage: "method_not_allowed" });
     return;
   }
 
   const now = Date.now();
   const runDate = kstDayKey(new Date());
+  const errors: Array<{ code: string; message: string }> = [];
   const out: Record<string, unknown> = {
     ok: true,
     nowIso: new Date(now).toISOString(),
     runDate,
+    lastErrorCode: null,
+    lastErrorMessage: null,
     checks: {
       firestoreConnectivity: false,
       queueLatencyMs: null,
@@ -67,9 +70,10 @@ export const opsHealth = onRequest(async (req, res) => {
     // Read-only op to validate Firestore connectivity/permissions.
     await db().doc("_ops/health").get();
     (out.checks as Record<string, unknown>).firestoreConnectivity = true;
-  } catch {
+  } catch (err: unknown) {
     (out.checks as Record<string, unknown>).firestoreConnectivity = false;
     out.ok = false;
+    errors.push({ code: "firestore_connectivity_failed", message: String((err as { message?: unknown })?.message ?? err) });
   }
 
   try {
@@ -77,9 +81,11 @@ export const opsHealth = onRequest(async (req, res) => {
     const exists = costSnap.exists;
     (out.checks as Record<string, unknown>).costDailyLatestExists = exists;
     if (!exists) out.ok = false;
-  } catch {
+    if (!exists) errors.push({ code: "missing_costDaily_latest", message: `missing costDaily/${runDate}` });
+  } catch (err: unknown) {
     (out.checks as Record<string, unknown>).costDailyLatestExists = false;
     out.ok = false;
+    errors.push({ code: "costDaily_read_failed", message: String((err as { message?: unknown })?.message ?? err) });
   }
 
   try {
@@ -93,8 +99,9 @@ export const opsHealth = onRequest(async (req, res) => {
       maxAgeMs = maxAgeMs == null ? age : Math.max(maxAgeMs, age);
     }
     (out.checks as Record<string, unknown>).queueLatencyMs = maxAgeMs;
-  } catch {
+  } catch (err: unknown) {
     (out.checks as Record<string, unknown>).queueLatencyMs = null;
+    errors.push({ code: "queue_latency_read_failed", message: String((err as { message?: unknown })?.message ?? err) });
   }
 
   try {
@@ -112,9 +119,18 @@ export const opsHealth = onRequest(async (req, res) => {
     }
     (out.checks as Record<string, unknown>).lastPipelineSuccessIso = lastIso;
     if (!lastIso) out.ok = false;
-  } catch {
+    if (!lastIso) errors.push({ code: "missing_last_pipeline_success", message: "no recent pipelineRuns with state=succeeded" });
+  } catch (err: unknown) {
     (out.checks as Record<string, unknown>).lastPipelineSuccessIso = null;
     out.ok = false;
+    errors.push({ code: "pipelineRuns_read_failed", message: String((err as { message?: unknown })?.message ?? err) });
+  }
+
+  if (out.ok !== true) {
+    const first = errors[0] ?? { code: "unknown", message: "unknown" };
+    out.lastErrorCode = first.code;
+    out.lastErrorMessage = first.message;
+    out.errors = errors;
   }
 
   res.status(200).json(out);
@@ -123,7 +139,7 @@ export const opsHealth = onRequest(async (req, res) => {
 export const opsSmoke = onRequest(async (req, res) => {
   if (!requireOpsAuth(req, res)) return;
   if (req.method !== "POST") {
-    res.status(405).json({ ok: false, error: "method_not_allowed" });
+    res.status(405).json({ ok: false, lastErrorCode: "method_not_allowed", lastErrorMessage: "method_not_allowed" });
     return;
   }
 
@@ -131,11 +147,18 @@ export const opsSmoke = onRequest(async (req, res) => {
   const runDateRaw = String(req.query.runDate ?? "").trim();
   const runDate = runDateRaw ? runDateRaw : kstDayKey(new Date());
   if (!siteId) {
-    res.status(400).json({ ok: false, error: "missing_siteId", hint: "set ?siteId=... or functions env OPS_SMOKE_SITE_ID" });
+    res
+      .status(400)
+      .json({
+        ok: false,
+        lastErrorCode: "missing_siteId",
+        lastErrorMessage: "missing_siteId",
+        hint: "set ?siteId=... or functions env OPS_SMOKE_SITE_ID"
+      });
     return;
   }
   if (!isIsoDayKey(runDate)) {
-    res.status(400).json({ ok: false, error: "invalid_runDate", runDate });
+    res.status(400).json({ ok: false, lastErrorCode: "invalid_runDate", lastErrorMessage: "invalid_runDate", runDate });
     return;
   }
 
@@ -194,13 +217,24 @@ export const opsSmoke = onRequest(async (req, res) => {
   const packaged = a.status === "packaged";
   const packagePath = typeof a.packagePath === "string" ? a.packagePath : null;
   if (!packaged) {
-    res.status(500).json({ ok: false, error: "smoke_failed_article_not_packaged", articleId, status: a.status ?? null });
+    res.status(500).json({
+      ok: false,
+      lastErrorCode: "smoke_failed_article_not_packaged",
+      lastErrorMessage: "smoke_failed_article_not_packaged",
+      articleId,
+      status: a.status ?? null
+    });
     return;
   }
 
   const costSnap = await db().doc(`costDaily/${runDate}`).get();
   if (!costSnap.exists) {
-    res.status(500).json({ ok: false, error: "smoke_failed_missing_costDaily", runDate });
+    res.status(500).json({
+      ok: false,
+      lastErrorCode: "smoke_failed_missing_costDaily",
+      lastErrorMessage: "smoke_failed_missing_costDaily",
+      runDate
+    });
     return;
   }
 
