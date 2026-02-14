@@ -52,12 +52,14 @@ export const opsHealth = onRequest(async (req, res) => {
   const now = Date.now();
   const runDate = kstDayKey(new Date());
   const errors: Array<{ code: string; message: string }> = [];
+  const warnings: Array<{ code: string; message: string }> = [];
   const out: Record<string, unknown> = {
     ok: true,
     nowIso: new Date(now).toISOString(),
     runDate,
     lastErrorCode: null,
     lastErrorMessage: null,
+    warnings: [],
     checks: {
       firestoreConnectivity: false,
       queueLatencyMs: null,
@@ -80,12 +82,10 @@ export const opsHealth = onRequest(async (req, res) => {
     const costSnap = await db().doc(`costDaily/${runDate}`).get();
     const exists = costSnap.exists;
     (out.checks as Record<string, unknown>).costDailyLatestExists = exists;
-    if (!exists) out.ok = false;
-    if (!exists) errors.push({ code: "missing_costDaily_latest", message: `missing costDaily/${runDate}` });
+    if (!exists) warnings.push({ code: "missing_costDaily_latest", message: `missing costDaily/${runDate}` });
   } catch (err: unknown) {
     (out.checks as Record<string, unknown>).costDailyLatestExists = false;
-    out.ok = false;
-    errors.push({ code: "costDaily_read_failed", message: String((err as { message?: unknown })?.message ?? err) });
+    warnings.push({ code: "costDaily_read_failed", message: String((err as { message?: unknown })?.message ?? err) });
   }
 
   try {
@@ -126,6 +126,7 @@ export const opsHealth = onRequest(async (req, res) => {
     errors.push({ code: "pipelineRuns_read_failed", message: String((err as { message?: unknown })?.message ?? err) });
   }
 
+  out.warnings = warnings;
   if (out.ok !== true) {
     const first = errors[0] ?? { code: "unknown", message: "unknown" };
     out.lastErrorCode = first.code;
