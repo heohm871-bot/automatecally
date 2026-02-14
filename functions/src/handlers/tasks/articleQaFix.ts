@@ -7,6 +7,7 @@ import type { ArticleQaFixPayload } from "../schema";
 import { canUseLlm, getLlmUsage, bumpLlmUsage } from "../../lib/llmUsage";
 import { callOpenAiStructuredCached, MODEL_DEFAULT } from "../../lib/llm/openai";
 import { QaFixJsonSchema, QaFixOutZ, SCHEMA_VERSION } from "../../lib/llm/schemas";
+import { recordArticleLlmCost } from "../../lib/costAccounting";
 
 type ArticleDoc = {
   html?: string;
@@ -90,7 +91,9 @@ export async function articleQaFix(payload: ArticleQaFixPayload) {
 
   const llmUsage = getLlmUsage(a.llmUsage);
   const canUse = canUseLlm("qaFix", llmUsage, settings.caps);
-  const useLlm = Boolean(process.env.OPENAI_API_KEY) && canUse;
+  const openAiEnabled = Boolean(process.env.OPENAI_API_KEY);
+  const capExceeded = openAiEnabled && !canUse;
+  const useLlm = openAiEnabled && canUse;
 
   let nextHtml = a.html ?? "";
   let nextHashtags12 = a.hashtags12 ?? [];
@@ -116,7 +119,7 @@ export async function articleQaFix(payload: ArticleQaFixPayload) {
     ].join("\n");
 
     try {
-      const { out } = await callOpenAiStructuredCached({
+      const { out, cacheHash, usage } = await callOpenAiStructuredCached({
         task: "qaFix",
         normalizedRequest,
         schemaVersion: SCHEMA_VERSION,
@@ -128,6 +131,14 @@ export async function articleQaFix(payload: ArticleQaFixPayload) {
         user,
         zod: QaFixOutZ,
         ttlDays: 30
+      });
+      await recordArticleLlmCost({
+        siteId,
+        runDate: payload.runDate,
+        articleId,
+        cacheHash,
+        model: MODEL_DEFAULT,
+        usage
       });
       nextHtml = out.html;
     } catch {
@@ -170,4 +181,12 @@ export async function articleQaFix(payload: ArticleQaFixPayload) {
       articleId
     }
   });
+
+  if (capExceeded) {
+    return {
+      finalState: "skipped",
+      lastErrorCode: "CAP_EXCEEDED",
+      lastErrorMessage: "caps.qaFixMax exceeded; LLM call skipped"
+    };
+  }
 }

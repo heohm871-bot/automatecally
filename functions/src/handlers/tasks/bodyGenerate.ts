@@ -7,6 +7,7 @@ import { getGlobalSettings } from "../../lib/globalSettings";
 import { canUseLlm, bumpLlmUsage, getLlmUsage } from "../../lib/llmUsage";
 import { callOpenAiStructuredCached, MODEL_DEFAULT, MODEL_QUALITY } from "../../lib/llm/openai";
 import { BodyJsonSchema, BodyOutZ, SCHEMA_VERSION } from "../../lib/llm/schemas";
+import { recordArticleLlmCost } from "../../lib/costAccounting";
 
 type ArticleDoc = {
   keywordId?: string;
@@ -32,7 +33,10 @@ export async function bodyGenerate(payload: BodyGeneratePayload) {
   const a = (aSnap.data() ?? {}) as ArticleDoc;
   await aRef.set({ status: "generating" }, { merge: true });
   const llmUsage = getLlmUsage((a as { llmUsage?: unknown }).llmUsage);
-  const useLlm = Boolean(process.env.OPENAI_API_KEY) && canUseLlm("body", llmUsage, settings.caps);
+  const openAiEnabled = Boolean(process.env.OPENAI_API_KEY);
+  const allowedByCaps = canUseLlm("body", llmUsage, settings.caps);
+  const capExceeded = openAiEnabled && !allowedByCaps;
+  const useLlm = openAiEnabled && allowedByCaps;
   const nextLlmUsage = useLlm ? bumpLlmUsage(llmUsage, "body") : llmUsage;
 
   const kwSnap = await db().doc(`keywords/${a.keywordId}`).get();
@@ -139,18 +143,27 @@ ${detailBlock}
 
     try {
       const preferQuality = process.env.OPENAI_BODY_USE_QUALITY === "1";
-      const { out } = await callOpenAiStructuredCached({
+      const model = preferQuality ? MODEL_QUALITY : MODEL_DEFAULT;
+      const { out, cacheHash, usage } = await callOpenAiStructuredCached({
         task: "body",
         normalizedRequest,
         schemaVersion: SCHEMA_VERSION,
         promptVersion,
-        model: preferQuality ? MODEL_QUALITY : MODEL_DEFAULT,
+        model,
         schemaName: "blog_body_v1",
         jsonSchema: BodyJsonSchema,
         system,
         user,
         zod: BodyOutZ,
         ttlDays: 30
+      });
+      await recordArticleLlmCost({
+        siteId,
+        runDate: payload.runDate,
+        articleId,
+        cacheHash,
+        model,
+        usage
       });
       html = out.html;
       hashtags12 = out.hashtags12;
@@ -181,4 +194,12 @@ ${detailBlock}
       articleId
     }
   });
+
+  if (capExceeded) {
+    return {
+      finalState: "skipped",
+      lastErrorCode: "CAP_EXCEEDED",
+      lastErrorMessage: "caps.bodyLLMMax exceeded; LLM call skipped"
+    };
+  }
 }
