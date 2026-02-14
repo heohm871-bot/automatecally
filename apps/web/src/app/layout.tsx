@@ -28,6 +28,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                   <Link className="rounded-md px-3 py-1.5 hover:bg-slate-100" href="/metrics">
                     Metrics
                   </Link>
+                  <Link className="rounded-md px-3 py-1.5 hover:bg-slate-100" href="/ops">
+                    Ops
+                  </Link>
                   <Link className="rounded-md px-3 py-1.5 hover:bg-slate-100" href="/settings">
                     Settings
                   </Link>
