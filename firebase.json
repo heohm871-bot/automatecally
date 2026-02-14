@@ -7,7 +7,7 @@
   ],
   "firestore": {
     "rules": "infra/firestore.rules",
-    "indexes": "infra/firestore.indexes.datastore.json"
+    "indexes": "infra/firestore.indexes.json"
   },
   "emulators": {
     "auth": {
