@@ -3,6 +3,10 @@ import { enqueueTask } from "../../lib/tasks";
 import type { BodyGeneratePayload } from "../schema";
 import { buildImagePlan } from "../../../../packages/shared/imagePlan";
 import { buildTopCardPoints } from "../../../../packages/shared/topCardPoints";
+import { getGlobalSettings } from "../../lib/globalSettings";
+import { canUseLlm, bumpLlmUsage, getLlmUsage } from "../../lib/llmUsage";
+import { callOpenAiStructuredCached, MODEL_DEFAULT, MODEL_QUALITY } from "../../lib/llm/openai";
+import { BodyJsonSchema, BodyOutZ, SCHEMA_VERSION } from "../../lib/llm/schemas";
 
 type ArticleDoc = {
   keywordId?: string;
@@ -20,11 +24,16 @@ type KeywordDoc = { text?: string };
 
 export async function bodyGenerate(payload: BodyGeneratePayload) {
   const { siteId, articleId } = payload;
+  const settings = await getGlobalSettings();
 
   const aRef = db().doc(`articles/${articleId}`);
   const aSnap = await aRef.get();
   if (!aSnap.exists) throw new Error("article not found");
   const a = (aSnap.data() ?? {}) as ArticleDoc;
+  await aRef.set({ status: "generating" }, { merge: true });
+  const llmUsage = getLlmUsage((a as { llmUsage?: unknown }).llmUsage);
+  const useLlm = Boolean(process.env.OPENAI_API_KEY) && canUseLlm("body", llmUsage, settings.caps);
+  const nextLlmUsage = useLlm ? bumpLlmUsage(llmUsage, "body") : llmUsage;
 
   const kwSnap = await db().doc(`keywords/${a.keywordId}`).get();
   const kw = (kwSnap.data() ?? {}) as KeywordDoc;
@@ -60,7 +69,7 @@ export async function bodyGenerate(payload: BodyGeneratePayload) {
     `작은 실패 사례를 빠르게 정리해 같은 실수를 줄이는 것이 핵심입니다.`;
   const detailBlock = Array.from({ length: 8 }, () => `<p>${guideText}</p>`).join("\n");
 
-  const html = `<div class="entry-content">
+  let html = `<div class="entry-content">
 <p>${a.titleFinal}... 도입부(PAS) 120~150자</p>
 
 <div style="border:2px solid #d4af37; padding:12px; border-radius:10px;">
@@ -97,14 +106,67 @@ ${detailBlock}
 
 <p>따뜻한 멘트 + 댓글/공감 유도</p>
 </div>`;
+  let hashtags12 = a.hashtags12 ?? Array.from({ length: 12 }, (_, i) => `#tag${i + 1}`);
+
+  if (useLlm) {
+    const normalizedRequest = {
+      keyword: keywordText.trim(),
+      title: String(a.titleFinal ?? "").trim(),
+      intent,
+      k12
+    };
+    const promptVersion = "2026-02-12";
+    const system = [
+      "너는 네이버/티스토리용 HTML 본문 생성기다.",
+      "응답은 반드시 JSON 스키마를 따라야 한다.",
+      "본문은 실용적이고 읽기 쉬운 한국어로 작성한다."
+    ].join(" ");
+    const user = [
+      `키워드: ${normalizedRequest.keyword}`,
+      `제목: ${normalizedRequest.title}`,
+      `의도: ${normalizedRequest.intent}`,
+      `k12.main: ${k12.main.join(" / ")}`,
+      `k12.longtail: ${k12.longtail.join(" / ")}`,
+      `k12.inflow: ${k12.inflow.join(" / ")}`,
+      "요구사항:",
+      "- html은 2500~3000자 내외",
+      "- hr은 최소 4개",
+      "- h2는 최소 4개",
+      "- table 또는 FAQ 포함",
+      "- hashtags12는 #으로 시작하는 항목 12개"
+    ].join("\n");
+
+    try {
+      const preferQuality = process.env.OPENAI_BODY_USE_QUALITY === "1";
+      const { out } = await callOpenAiStructuredCached({
+        task: "body",
+        normalizedRequest,
+        schemaVersion: SCHEMA_VERSION,
+        promptVersion,
+        model: preferQuality ? MODEL_QUALITY : MODEL_DEFAULT,
+        schemaName: "blog_body_v1",
+        jsonSchema: BodyJsonSchema,
+        system,
+        user,
+        zod: BodyOutZ,
+        ttlDays: 30
+      });
+      html = out.html;
+      hashtags12 = out.hashtags12;
+    } catch {
+      // fallback: keep deterministic template body
+    }
+  }
 
   await aRef.set(
     {
       k12,
       imagePlan,
       topCardDraft: { labelsShort },
-      hashtags12: a.hashtags12 ?? Array.from({ length: 12 }, (_, i) => `#tag${i + 1}`),
-      html
+      hashtags12,
+      html,
+      llmUsage: nextLlmUsage,
+      status: "generating"
     },
     { merge: true }
   );
@@ -114,7 +176,7 @@ ${detailBlock}
     payload: {
       ...payload,
       taskType: "article_qa",
-      idempotencyKey: `article_qa:${siteId}:${articleId}`,
+      idempotencyKey: `article_qa:${siteId}:${payload.runDate}:${articleId}`,
       articleId
     }
   });

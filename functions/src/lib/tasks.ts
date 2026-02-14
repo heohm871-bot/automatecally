@@ -1,4 +1,5 @@
 import { CloudTasksClient } from "@google-cloud/tasks";
+import { createHash } from "node:crypto";
 
 const client = new CloudTasksClient();
 
@@ -6,7 +7,72 @@ export type EnqueueArgs = {
   queue: "light" | "heavy";
   scheduleTimeSecFromNow?: number;
   payload: unknown;
+  ignoreAlreadyExists?: boolean;
 };
+
+function assertIdempotencyKey(payload: unknown) {
+  const raw = (payload ?? {}) as Record<string, unknown>;
+  const taskType = typeof raw.taskType === "string" ? raw.taskType.trim() : "";
+  const siteId = typeof raw.siteId === "string" ? raw.siteId.trim() : "";
+  const runDate = typeof raw.runDate === "string" ? raw.runDate.trim() : "";
+  const idempotencyKey = typeof raw.idempotencyKey === "string" ? raw.idempotencyKey.trim() : "";
+
+  if (!taskType || !siteId || !runDate || !idempotencyKey) {
+    throw new Error("invalid task payload: missing taskType/siteId/runDate/idempotencyKey");
+  }
+  if (!idempotencyKey.startsWith(`${taskType}:`)) {
+    throw new Error(`invalid idempotencyKey: must start with "${taskType}:"`);
+  }
+  if (!idempotencyKey.includes(`:${siteId}`)) {
+    throw new Error(`invalid idempotencyKey: must include siteId (${siteId})`);
+  }
+  if (!idempotencyKey.includes(`:${runDate}`)) {
+    throw new Error(`invalid idempotencyKey: must include runDate (${runDate})`);
+  }
+
+  // Only enforce id-specific constraints for tasks that actually require those ids.
+  // Many tasks pass through extra fields via object spread; validating solely based on
+  // "field exists" causes false failures (e.g. keywordId leaking into body_generate payload).
+  const REQUIRE_ARTICLE_ID = new Set([
+    "body_generate",
+    "article_qa",
+    "article_qa_fix",
+    "topcard_render",
+    "image_generate",
+    "article_package",
+    "publish_execute"
+  ]);
+  const REQUIRE_KEYWORD_ID = new Set(["title_generate", "article_generate"]);
+
+  const articleId = typeof raw.articleId === "string" ? raw.articleId.trim() : "";
+  if (REQUIRE_ARTICLE_ID.has(taskType)) {
+    if (!articleId) throw new Error("invalid task payload: missing articleId");
+    if (!idempotencyKey.includes(articleId)) {
+      throw new Error(`invalid idempotencyKey: must include articleId (${articleId})`);
+    }
+  }
+
+  const keywordId = typeof raw.keywordId === "string" ? raw.keywordId.trim() : "";
+  if (REQUIRE_KEYWORD_ID.has(taskType)) {
+    if (!keywordId) throw new Error("invalid task payload: missing keywordId");
+    if (!idempotencyKey.includes(keywordId)) {
+      throw new Error(`invalid idempotencyKey: must include keywordId (${keywordId})`);
+    }
+  }
+}
+
+function getPayloadMeta(payload: unknown) {
+  const raw = (payload ?? {}) as Record<string, unknown>;
+  const idempotencyKey = typeof raw.idempotencyKey === "string" ? raw.idempotencyKey : "";
+  const retryCount =
+    typeof raw.retryCount === "number" && Number.isFinite(raw.retryCount) ? Math.max(0, Math.floor(raw.retryCount)) : 0;
+  return { idempotencyKey, retryCount };
+}
+
+function makeTaskId(idempotencyKey: string, retryCount: number) {
+  const seed = `${idempotencyKey}:r${retryCount}`;
+  return `t_${createHash("sha256").update(seed).digest("hex").slice(0, 48)}`;
+}
 
 async function withTimeout<T>(promise: Promise<T>, ms: number, code: string, taskType: string): Promise<T> {
   let timer: NodeJS.Timeout | undefined;
@@ -22,6 +88,14 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, code: string, tas
   }
 }
 
+function isAlreadyExistsError(err: unknown) {
+  const code = Number((err as { code?: unknown })?.code);
+  if (code === 6) return true;
+
+  const message = String((err as { message?: unknown })?.message ?? "");
+  return message.includes("ALREADY_EXISTS");
+}
+
 export async function enqueueTask(args: EnqueueArgs) {
   if (process.env.TASKS_EXECUTE_INLINE === "1") {
     const [{ AnyTaskPayloadSchema }, { routeTask }] = await Promise.all([
@@ -29,18 +103,24 @@ export async function enqueueTask(args: EnqueueArgs) {
       import("../handlers/taskRouter")
     ]);
     const payload = AnyTaskPayloadSchema.parse(args.payload);
+    assertIdempotencyKey(payload);
     const timeoutMs = Number(process.env.INLINE_TASK_TIMEOUT_MS ?? 45_000);
     await withTimeout(routeTask(payload), timeoutMs, "E2E_TASK_TIMEOUT", payload.taskType);
     return;
   }
 
-  const { ENV } = await import("./env");
+  assertIdempotencyKey(args.payload);
+  const { getEnv } = await import("./env");
+  const ENV = getEnv();
   const queueName = args.queue === "heavy" ? ENV.QUEUE_HEAVY : ENV.QUEUE_LIGHT;
   const parent = client.queuePath(ENV.GCP_PROJECT, ENV.TASKS_LOCATION, queueName);
 
   const body = Buffer.from(JSON.stringify(args.payload)).toString("base64");
+  const meta = getPayloadMeta(args.payload);
+  const taskId = meta.idempotencyKey ? makeTaskId(meta.idempotencyKey, meta.retryCount) : "";
 
   const task: {
+    name?: string;
     httpRequest: {
       httpMethod: "POST";
       url: string;
@@ -59,11 +139,19 @@ export async function enqueueTask(args: EnqueueArgs) {
       body
     }
   };
+  if (taskId) {
+    task.name = client.taskPath(ENV.GCP_PROJECT, ENV.TASKS_LOCATION, queueName, taskId);
+  }
 
   if (args.scheduleTimeSecFromNow && args.scheduleTimeSecFromNow > 0) {
     const scheduleTime = new Date(Date.now() + args.scheduleTimeSecFromNow * 1000);
     task.scheduleTime = { seconds: Math.floor(scheduleTime.getTime() / 1000) };
   }
 
-  await client.createTask({ parent, task });
+  try {
+    await client.createTask({ parent, task });
+  } catch (err: unknown) {
+    if (args.ignoreAlreadyExists && isAlreadyExistsError(err)) return;
+    throw err;
+  }
 }

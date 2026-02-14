@@ -45,6 +45,15 @@ export async function recordTaskSnapshot(
     ...(args?.durationMs !== undefined ? { durationMs: args.durationMs } : {}),
     ...(args?.error ? { error: args.error } : {})
   };
+  const traceEntry = {
+    task: payload.taskType,
+    at: now.toISOString(),
+    ok: status === "running" ? null : status === "success",
+    status,
+    traceId: payload.traceId,
+    retryCount: payload.retryCount,
+    ...(args?.error ? { error: args.error } : {})
+  };
 
   await db()
     .doc(`articles/${articleId}`)
@@ -53,7 +62,8 @@ export async function recordTaskSnapshot(
         pipelineLastTask: payload.taskType,
         pipelineLastStatus: status,
         pipelineUpdatedAt: now,
-        pipelineHistory: getAdmin().firestore.FieldValue.arrayUnion(timelineEntry)
+        pipelineHistory: getAdmin().firestore.FieldValue.arrayUnion(timelineEntry),
+        trace: getAdmin().firestore.FieldValue.arrayUnion(traceEntry)
       },
       { merge: true }
     );

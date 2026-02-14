@@ -84,6 +84,29 @@ async function run() {
     const routed = await stepWithTimeout("routeTask(kw_score)", routeTask(payload), stepTimeoutMs);
     stepStats.push({ step: "routeTask(kw_score)", durationMs: routed.durationMs });
 
+    const runsSnap = await stepWithTimeout(
+      "queryTaskRuns",
+      db().collection("taskRuns").where("traceId", "==", fixture.traceId).limit(200).get(),
+      stepTimeoutMs
+    );
+    stepStats.push({ step: "queryTaskRuns", durationMs: runsSnap.durationMs });
+
+    const runs: Array<Record<string, unknown>> = runsSnap.result.docs.map((d) => ({
+      id: d.id,
+      ...(d.data() as Record<string, unknown>)
+    }));
+    const failed = runs.filter((r) => r.status === "failed");
+    if (failed.length > 0) {
+      const top = failed
+        .slice(0, 5)
+        .map(
+          (r) =>
+            `${String(r.taskType ?? "unknown")} ${String(r.id ?? "").slice(0, 60)} ${String(r.error ?? "")}`
+        )
+        .join(" | ");
+      throw new E2eError("E2E_TASK_FAILED", `E2E failed: some tasks failed (${failed.length}). ${top}`);
+    }
+
     const queried = await stepWithTimeout(
       "queryArticle",
       db()
@@ -104,11 +127,29 @@ async function run() {
     const articleDoc = articleSnap.docs[0];
     articleId = articleDoc.id;
 
-    const article = articleDoc.data() as { packagePath?: string; qa?: { pass?: boolean }; status?: string };
-    status = article.status ?? null;
-    qaPass = article.qa?.pass ?? null;
-    packagePath = article.packagePath ?? null;
+    // Even with inline execution, Firestore writes can land slightly after the last awaited task.
+    // Poll briefly for the terminal state to avoid flakiness.
+    const maxWaitMs = Number(process.env.E2E_WAIT_PACKAGED_MS ?? 10_000);
+    const pollEveryMs = 250;
+    const startedWait = Date.now();
+    while (true) {
+      const snap = await db().doc(`articles/${articleId}`).get();
+      const article = (snap.data() ?? {}) as { packagePath?: string; qa?: { pass?: boolean }; status?: string };
+      status = article.status ?? null;
+      qaPass = article.qa?.pass ?? null;
+      packagePath = article.packagePath ?? null;
 
+      if (status === "packaged") break;
+      if (Date.now() - startedWait >= maxWaitMs) break;
+      await new Promise((r) => setTimeout(r, pollEveryMs));
+    }
+
+    if (status !== "packaged") {
+      throw new E2eError(
+        "E2E_STATUS_NOT_PACKAGED",
+        `E2E failed: expected articles/${articleId}.status to be packaged but got ${status ?? "null"}`
+      );
+    }
     if (!packagePath) {
       throw new E2eError("E2E_PACKAGE_MISSING", "E2E failed: packagePath missing");
     }

@@ -4,11 +4,15 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "npm --prefix apps/web run build && npm --prefix functions run build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "npm --prefix apps/web run lint && npm --prefix functions run lint",
+    "test": "npm --prefix functions test && npm --prefix apps/web run build",
+    "e2e:once": "npm --prefix functions run e2e:once"
   },
   "dependencies": {
+    "firebase-admin": "^13.6.1",
+    "firebase-functions": "^7.0.5",
     "next": "16.0.8",
     "react": "19.2.1",
     "react-dom": "19.2.1"
