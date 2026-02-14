@@ -242,3 +242,24 @@
 1. 예약발행 실제 실행기(게시 API 연동/스케줄러) 구현
 2. DuckDuckGo fallback 실제 수집기(현재는 구조 연결, 소스 구현은 최소 상태)
 3. `settings/global` 값을 Web 콘솔에서 수정하는 Admin UI 추가
+
+---
+
+## 2026-02-14
+
+- Worklog: `docs/worklog/2026-02-14.md`
+- 핵심 상태
+  - Cost control(PR #15) 운영 반영: functions/indexes deploy 완료
+  - Web deploy: Firebase Hosting 경로 없음(설정 부재) → Vercel 워크플로/런북 추가됨
+    - Runbook: `docs/runbooks/web-deploy.md`
+    - Workflow: `.github/workflows/web-deploy-vercel.yml`
+  - runDate 표준: KST(UTC+9) `YYYY-MM-DD`
+    - 문서: `docs/runbooks/runDate.md`
+    - `/ops` 기본 날짜 KST로 표준화됨
+  - PR #18(budgets-alerts-hardstop): `apps/web/src/app/ops/page.tsx` 충돌을 로컬 rebase로 해결 후 force-with-lease 푸시 완료
+
+- 다음 세션 체크리스트(운영 반영)
+  1) PR #18 squash merge (conflicts 없음 + checks green 확인)
+  2) Vercel secrets/env 설정 후 web deploy 실행 → 운영 URL에서 `/ops` 확인
+  3) `settings/global.budgets` 값 세팅 후 80%/100% 동작 검증(BUDGET_EXCEEDED + alertsSent dedup)
+  4) 필요 시 cost recompute(dryRun→apply)로 집계 정합성 재확보
