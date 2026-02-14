@@ -132,10 +132,6 @@ export const opsHealth = onRequest(async (req, res) => {
     out.lastErrorCode = first.code;
     out.lastErrorMessage = first.message;
     out.errors = errors;
-  } else if (warnings.length > 0) {
-    // Keep ok=true, but expose warnings for non-blocking signals.
-    out.lastErrorCode = warnings[0]!.code;
-    out.lastErrorMessage = warnings[0]!.message;
   }
 
   res.status(200).json(out);
