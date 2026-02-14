@@ -36,8 +36,39 @@ jobs:
         env:
           FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
         run: |
+          set -euo pipefail
           if [ -z "${FIREBASE_TOKEN}" ]; then
             echo "Missing secrets.FIREBASE_TOKEN (required to run firebase deploy in CI)."
+            exit 1
+          fi
+
+      - name: Assert post-deploy smoke secrets
+        env:
+          OPS_SECRET: ${{ secrets.OPS_SECRET }}
+          OPS_SMOKE_SITE_ID: ${{ secrets.OPS_SMOKE_SITE_ID }}
+          OPS_WEB_BASE_URL: ${{ secrets.OPS_WEB_BASE_URL }}
+          OPS_WEB_HEALTH_TOKEN: ${{ secrets.OPS_WEB_HEALTH_TOKEN }}
+        run: |
+          set -euo pipefail
+          missing=0
+          if [ -z "${OPS_SECRET}" ]; then
+            echo "Missing secrets.OPS_SECRET (must equal Firebase Functions TASK_SECRET; used for X-Ops-Secret)."
+            missing=1
+          fi
+          if [ -z "${OPS_SMOKE_SITE_ID}" ]; then
+            echo "Missing secrets.OPS_SMOKE_SITE_ID (safe siteId for ops smoke)."
+            missing=1
+          fi
+          if [ -z "${OPS_WEB_BASE_URL}" ]; then
+            echo "Missing secrets.OPS_WEB_BASE_URL (e.g. https://<your-vercel-domain>)."
+            missing=1
+          fi
+          if [ -z "${OPS_WEB_HEALTH_TOKEN}" ]; then
+            echo "Missing secrets.OPS_WEB_HEALTH_TOKEN (must equal web runtime OPS_HEALTH_TOKEN; used for Authorization Bearer)."
+            missing=1
+          fi
+          if [ "$missing" -ne 0 ]; then
+            echo "Post-deploy smoke will fail without the above secrets. Configure them in GitHub -> Settings -> Secrets and variables -> Actions."
             exit 1
           fi
 

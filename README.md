@@ -44,6 +44,36 @@ Smoke checklist (manual, production auth varies):
 npm run ops:smoke:blog
 ```
 
+### GitHub Actions Secrets (Required for `ops-deploy-blog`)
+
+These are **GitHub repo secrets** used by `.github/workflows/ops-deploy-blog.yml` post-deploy smoke.
+
+- `OPS_SECRET`: must equal Firebase Functions `TASK_SECRET` (same value).
+- `OPS_SMOKE_SITE_ID`: a safe `siteId` for smoke (it will create a small `articles/*` doc and run analyzer+package once).
+- `OPS_WEB_BASE_URL`: base URL for the web admin (Vercel), e.g. `https://<your-domain>`.
+- `OPS_WEB_HEALTH_TOKEN`: bearer token used by the smoke script to call `/api/ops/health`.
+
+If any are missing, the workflow should fail with a clear message before deploy/smoke.
+
+### Web Runtime Env (Vercel)
+
+These are **Vercel env vars** for the web app (`apps/web`) health proxy endpoint.
+
+- `OPS_HEALTH_TOKEN`: bearer token required by `GET /api/ops/health`.
+  - Recommend setting this to the same value as GitHub secret `OPS_WEB_HEALTH_TOKEN`.
+- `OPS_HEALTH_UPSTREAM_URL`: Firebase Functions `opsHealth` URL, e.g. `https://<region>-<project>.cloudfunctions.net/opsHealth`.
+- `OPS_HEALTH_UPSTREAM_SECRET`: secret header value sent to upstream (`X-Ops-Secret`).
+  - Must equal `OPS_SECRET` / Functions `TASK_SECRET`.
+
+### Weekly Report Schema (Firestore)
+
+`opsWeeklyReports/week_end_YYYY-MM-DD` (the `YYYY-MM-DD` is **KST** "yesterday" when the report runs; schedule: Mondays 10:15 KST)
+
+- `window.startDayKey`, `window.endDayKey`, `window.days[]` (KST day keys)
+- `pipeline.total`, `pipeline.succeeded`, `pipeline.failed`, `pipeline.successRate`
+- `tasks.total`, `tasks.succeeded`, `tasks.failed`, `tasks.skipped`, `tasks.skippedRate`, `tasks.avgDurationMs`
+- `cost.totalUsd`, `cost.deltaUsdVsPrev7d`, `cost.series[]` (`dayKey`, `estimatedCostUsd`, `llmCallCount`, `estimatedTokens`)
+
 Web deploy (/ops 포함) runbook:
 
 - `docs/runbooks/web-deploy.md`
