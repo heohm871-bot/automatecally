@@ -64,6 +64,21 @@ export async function articleQaFix(payload: ArticleQaFixPayload) {
 
   if (currentQa.pass) {
     await aRef.set({ qa: currentQa, status: "ready" }, { merge: true });
+    // Ensure the pipeline continues to packaging even if QA now passes here.
+    // In inline/async execution, article_qa_fix may observe a passing doc while the original
+    // article_qa had failed; re-run article_qa to follow the canonical flow (topcard/images/package).
+    await enqueueTask({
+      queue: "light",
+      ignoreAlreadyExists: true,
+      payload: {
+        ...payload,
+        taskType: "article_qa",
+        idempotencyKey: `article_qa:${siteId}:${payload.runDate}:${articleId}:after-fix-pass${
+          runTag ? `:${runTag}` : ""
+        }`,
+        articleId
+      }
+    });
     return;
   }
 

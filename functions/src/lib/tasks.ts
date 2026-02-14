@@ -30,13 +30,34 @@ function assertIdempotencyKey(payload: unknown) {
     throw new Error(`invalid idempotencyKey: must include runDate (${runDate})`);
   }
 
+  // Only enforce id-specific constraints for tasks that actually require those ids.
+  // Many tasks pass through extra fields via object spread; validating solely based on
+  // "field exists" causes false failures (e.g. keywordId leaking into body_generate payload).
+  const REQUIRE_ARTICLE_ID = new Set([
+    "body_generate",
+    "article_qa",
+    "article_qa_fix",
+    "topcard_render",
+    "image_generate",
+    "article_package",
+    "publish_execute"
+  ]);
+  const REQUIRE_KEYWORD_ID = new Set(["title_generate", "article_generate"]);
+
   const articleId = typeof raw.articleId === "string" ? raw.articleId.trim() : "";
-  if (articleId && !idempotencyKey.includes(articleId)) {
-    throw new Error(`invalid idempotencyKey: must include articleId (${articleId})`);
+  if (REQUIRE_ARTICLE_ID.has(taskType)) {
+    if (!articleId) throw new Error("invalid task payload: missing articleId");
+    if (!idempotencyKey.includes(articleId)) {
+      throw new Error(`invalid idempotencyKey: must include articleId (${articleId})`);
+    }
   }
+
   const keywordId = typeof raw.keywordId === "string" ? raw.keywordId.trim() : "";
-  if (keywordId && !idempotencyKey.includes(keywordId)) {
-    throw new Error(`invalid idempotencyKey: must include keywordId (${keywordId})`);
+  if (REQUIRE_KEYWORD_ID.has(taskType)) {
+    if (!keywordId) throw new Error("invalid task payload: missing keywordId");
+    if (!idempotencyKey.includes(keywordId)) {
+      throw new Error(`invalid idempotencyKey: must include keywordId (${keywordId})`);
+    }
   }
 }
 
