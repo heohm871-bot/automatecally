@@ -1,0 +1,69 @@
+name: Web Deploy (Vercel)
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Vercel environment (production/preview)"
+        required: true
+        default: "production"
+        type: choice
+        options:
+          - production
+          - preview
+  push:
+    branches: [ main ]
+    paths:
+      - "apps/web/**"
+      - "packages/**"
+      - "package.json"
+      - ".github/workflows/web-deploy-vercel.yml"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Assert Vercel secrets
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          set -euo pipefail
+          if [ -z "${VERCEL_TOKEN}" ] || [ -z "${VERCEL_ORG_ID}" ] || [ -z "${VERCEL_PROJECT_ID}" ]; then
+            echo "Missing one or more required secrets: VERCEL_TOKEN, VERCEL_ORG_ID, VERCEL_PROJECT_ID"
+            exit 1
+          fi
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install web deps
+        run: npm ci --prefix apps/web
+
+      - name: Build web (ensures /ops is in output)
+        run: npm --prefix apps/web run build
+
+      - name: Deploy to Vercel
+        working-directory: apps/web
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          VERCEL_ENV: ${{ inputs.environment }}
+        run: |
+          set -euo pipefail
+          ENV="${VERCEL_ENV:-production}"
+          if [ "${ENV}" = "production" ]; then
+            npx vercel@latest deploy --prod --yes --token "${VERCEL_TOKEN}"
+          else
+            npx vercel@latest deploy --yes --token "${VERCEL_TOKEN}"
+          fi
+

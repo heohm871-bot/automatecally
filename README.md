@@ -44,6 +44,10 @@ Smoke checklist (manual, production auth varies):
 npm run ops:smoke:blog
 ```
 
+Web deploy (/ops 포함) runbook:
+
+- `docs/runbooks/web-deploy.md`
+
 Rollback (minimal)
 - Revert the merge commit(s) in GitHub (new PR) and redeploy:
   - `firebase deploy --project blog --only functions,firestore:indexes`
