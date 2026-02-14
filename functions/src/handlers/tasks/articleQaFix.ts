@@ -8,6 +8,7 @@ import { canUseLlm, getLlmUsage, bumpLlmUsage } from "../../lib/llmUsage";
 import { callOpenAiStructuredCached, MODEL_DEFAULT } from "../../lib/llm/openai";
 import { QaFixJsonSchema, QaFixOutZ, SCHEMA_VERSION } from "../../lib/llm/schemas";
 import { recordArticleLlmCost } from "../../lib/costAccounting";
+import { budgetCheckAndMaybeAlert } from "../../lib/budgets";
 
 type ArticleDoc = {
   html?: string;
@@ -93,7 +94,16 @@ export async function articleQaFix(payload: ArticleQaFixPayload) {
   const canUse = canUseLlm("qaFix", llmUsage, settings.caps);
   const openAiEnabled = Boolean(process.env.OPENAI_API_KEY);
   const capExceeded = openAiEnabled && !canUse;
-  const useLlm = openAiEnabled && canUse;
+  const budget = openAiEnabled
+    ? await budgetCheckAndMaybeAlert({
+        siteId,
+        runDate: payload.runDate,
+        budgets: settings.budgets,
+        taskType: "article_qa_fix"
+      })
+    : { enabled: false as const, stop: false, total: { cost: 0, limit: 0, ratio: 0 }, site: { cost: 0, limit: 0, ratio: 0 } };
+  const budgetExceeded = openAiEnabled && budget.enabled && budget.stop;
+  const useLlm = openAiEnabled && canUse && !budgetExceeded;
 
   let nextHtml = a.html ?? "";
   let nextHashtags12 = a.hashtags12 ?? [];
@@ -182,6 +192,13 @@ export async function articleQaFix(payload: ArticleQaFixPayload) {
     }
   });
 
+  if (budgetExceeded) {
+    return {
+      finalState: "skipped",
+      lastErrorCode: "BUDGET_EXCEEDED",
+      lastErrorMessage: "daily budget exceeded; LLM call skipped"
+    };
+  }
   if (capExceeded) {
     return {
       finalState: "skipped",

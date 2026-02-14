@@ -20,6 +20,12 @@ export type CapsSettings = {
 export type GlobalSettings = {
   pipeline: PipelineSettings;
   caps: CapsSettings;
+  budgets: {
+    dailyUsdTotal: number; // 0 = disabled
+    dailyUsdPerSite: number; // 0 = disabled
+    alertThresholds: number[]; // ratios (e.g. 0.8, 1.0)
+    alertWebhookUrl: string; // empty = disabled
+  };
   growth: GrowthConfig;
 };
 
@@ -37,6 +43,12 @@ const DEFAULT_SETTINGS: GlobalSettings = {
     bodyLLMMax: 1,
     qaFixMax: 1,
     generateImagesOnlyOnQaPass: true
+  },
+  budgets: {
+    dailyUsdTotal: 0,
+    dailyUsdPerSite: 0,
+    alertThresholds: [0.8, 1.0],
+    alertWebhookUrl: ""
   },
   growth: GROWTH_V1
 };
@@ -61,7 +73,13 @@ function mergeSettings(raw: unknown): GlobalSettings {
   const src = (raw ?? {}) as Record<string, unknown>;
   const pipeline = (src.pipeline ?? {}) as Record<string, unknown>;
   const caps = (src.caps ?? {}) as Record<string, unknown>;
+  const budgets = (src.budgets ?? {}) as Record<string, unknown>;
   const growth = (src.growth ?? {}) as Record<string, unknown>;
+
+  const thresholdsRaw = budgets.alertThresholds;
+  const thresholds = Array.isArray(thresholdsRaw)
+    ? thresholdsRaw.filter((x) => typeof x === "number" && Number.isFinite(x)).map((x) => Math.max(0, x))
+    : DEFAULT_SETTINGS.budgets.alertThresholds;
 
   return {
     pipeline: {
@@ -86,6 +104,12 @@ function mergeSettings(raw: unknown): GlobalSettings {
         caps.generateImagesOnlyOnQaPass,
         DEFAULT_SETTINGS.caps.generateImagesOnlyOnQaPass
       )
+    },
+    budgets: {
+      dailyUsdTotal: Math.max(0, toNumber(budgets.dailyUsdTotal, DEFAULT_SETTINGS.budgets.dailyUsdTotal)),
+      dailyUsdPerSite: Math.max(0, toNumber(budgets.dailyUsdPerSite, DEFAULT_SETTINGS.budgets.dailyUsdPerSite)),
+      alertThresholds: thresholds.length > 0 ? thresholds : DEFAULT_SETTINGS.budgets.alertThresholds,
+      alertWebhookUrl: typeof budgets.alertWebhookUrl === "string" ? budgets.alertWebhookUrl.trim() : DEFAULT_SETTINGS.budgets.alertWebhookUrl
     },
     growth: {
       minTrend30: toNumber(growth.minTrend30, DEFAULT_SETTINGS.growth.minTrend30),

@@ -33,6 +33,13 @@ type CostDailyDoc = {
   updatedAt?: { seconds?: number };
 };
 
+type BudgetsCfg = {
+  dailyUsdTotal?: number;
+  dailyUsdPerSite?: number;
+  alertThresholds?: number[];
+  alertWebhookUrl?: string;
+};
+
 function todayKstRunDate() {
   return kstDayKey(new Date());
 }
@@ -69,6 +76,7 @@ export default function OpsPage() {
   const [costTodaySite, setCostTodaySite] = useState<CostDailyDoc | null>(null);
   const [costPrev, setCostPrev] = useState<CostDailyDoc | null>(null);
   const [costPrevSite, setCostPrevSite] = useState<CostDailyDoc | null>(null);
+  const [budgets, setBudgets] = useState<BudgetsCfg | null>(null);
 
   useEffect(() => {
     const db = getFirebaseDb();
@@ -131,6 +139,16 @@ export default function OpsPage() {
     return () => unsub.forEach((fn) => fn());
   }, [user, siteId, runDate]);
 
+  useEffect(() => {
+    const db = getFirebaseDb();
+    if (!db || !user) return;
+    return onSnapshot(doc(db, "settings", "global"), (snap) => {
+      const data = (snap.data() ?? {}) as Record<string, unknown>;
+      const b = (data.budgets ?? {}) as BudgetsCfg;
+      setBudgets(b);
+    });
+  }, [user]);
+
   const filtered = useMemo(() => {
     if (status === "all") return rows;
     const want = status.trim().toLowerCase();
@@ -164,15 +182,20 @@ export default function OpsPage() {
 
     const totalDelta = curTotal - prevTotal;
     const siteDelta = curSite - prevSite;
+    const dailyUsdTotal = typeof budgets?.dailyUsdTotal === "number" ? budgets.dailyUsdTotal : 0;
+    const dailyUsdPerSite = typeof budgets?.dailyUsdPerSite === "number" ? budgets.dailyUsdPerSite : 0;
+    const totalRatio = dailyUsdTotal > 0 ? curTotal / dailyUsdTotal : 0;
+    const siteRatio = dailyUsdPerSite > 0 ? curSite / dailyUsdPerSite : 0;
     return {
       curTotal,
       curSite,
       totalDelta,
       siteDelta,
       curCalls: typeof costToday?.llmCallCount === "number" ? costToday.llmCallCount : 0,
-      curTokens: typeof costToday?.estimatedTokens === "number" ? costToday.estimatedTokens : 0
+      curTokens: typeof costToday?.estimatedTokens === "number" ? costToday.estimatedTokens : 0,
+      budgets: { dailyUsdTotal, dailyUsdPerSite, totalRatio, siteRatio }
     };
-  }, [costToday, costTodaySite, costPrev, costPrevSite]);
+  }, [costToday, costTodaySite, costPrev, costPrevSite, budgets]);
 
   return (
     <AuthGuard title="Ops">
@@ -250,7 +273,29 @@ export default function OpsPage() {
 
         <div className="mt-4 grid gap-4 md:grid-cols-3">
           <div className="rounded-lg border border-slate-200 bg-white p-4 md:col-span-3">
-            <p className="text-xs font-medium text-slate-500">Estimated LLM cost</p>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs font-medium text-slate-500">Estimated LLM cost</p>
+              {(() => {
+                const totalRatio = costWidget.budgets.totalRatio || 0;
+                const siteRatio = costWidget.budgets.siteRatio || 0;
+                const totalEnabled = (costWidget.budgets.dailyUsdTotal || 0) > 0;
+                const siteEnabled = (costWidget.budgets.dailyUsdPerSite || 0) > 0;
+                const totalPct = Math.round(totalRatio * 100);
+                const sitePct = Math.round(siteRatio * 100);
+                const worst = Math.max(totalEnabled ? totalRatio : 0, siteEnabled ? siteRatio : 0);
+                if (worst >= 1) {
+                  return <span className="rounded bg-red-50 px-2 py-1 text-xs font-medium text-red-700">budget exceeded</span>;
+                }
+                if (worst >= 0.8) {
+                  return (
+                    <span className="rounded bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700">
+                      budget warning {totalEnabled ? `total ${totalPct}%` : ""}{totalEnabled && siteEnabled ? " / " : ""}{siteEnabled ? `site ${sitePct}%` : ""}
+                    </span>
+                  );
+                }
+                return null;
+              })()}
+            </div>
             <div className="mt-2 grid gap-2 md:grid-cols-3">
               <div className="rounded-md bg-slate-50 px-3 py-2">
                 <p className="text-xs text-slate-600">today(total)</p>

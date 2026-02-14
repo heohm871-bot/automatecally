@@ -8,6 +8,7 @@ import { canUseLlm, bumpLlmUsage, getLlmUsage } from "../../lib/llmUsage";
 import { callOpenAiStructuredCached, MODEL_DEFAULT, MODEL_QUALITY } from "../../lib/llm/openai";
 import { BodyJsonSchema, BodyOutZ, SCHEMA_VERSION } from "../../lib/llm/schemas";
 import { recordArticleLlmCost } from "../../lib/costAccounting";
+import { budgetCheckAndMaybeAlert } from "../../lib/budgets";
 
 type ArticleDoc = {
   keywordId?: string;
@@ -36,7 +37,16 @@ export async function bodyGenerate(payload: BodyGeneratePayload) {
   const openAiEnabled = Boolean(process.env.OPENAI_API_KEY);
   const allowedByCaps = canUseLlm("body", llmUsage, settings.caps);
   const capExceeded = openAiEnabled && !allowedByCaps;
-  const useLlm = openAiEnabled && allowedByCaps;
+  const budget = openAiEnabled
+    ? await budgetCheckAndMaybeAlert({
+        siteId,
+        runDate: payload.runDate,
+        budgets: settings.budgets,
+        taskType: "body_generate"
+      })
+    : { enabled: false as const, stop: false, total: { cost: 0, limit: 0, ratio: 0 }, site: { cost: 0, limit: 0, ratio: 0 } };
+  const budgetExceeded = openAiEnabled && budget.enabled && budget.stop;
+  const useLlm = openAiEnabled && allowedByCaps && !budgetExceeded;
   const nextLlmUsage = useLlm ? bumpLlmUsage(llmUsage, "body") : llmUsage;
 
   const kwSnap = await db().doc(`keywords/${a.keywordId}`).get();
@@ -195,6 +205,13 @@ ${detailBlock}
     }
   });
 
+  if (budgetExceeded) {
+    return {
+      finalState: "skipped",
+      lastErrorCode: "BUDGET_EXCEEDED",
+      lastErrorMessage: "daily budget exceeded; LLM call skipped"
+    };
+  }
   if (capExceeded) {
     return {
       finalState: "skipped",

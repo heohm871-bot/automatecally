@@ -38,6 +38,13 @@ type GrowthSettings = {
   midCompetitionShare: number;
 };
 
+type BudgetsSettings = {
+  dailyUsdTotal: number;
+  dailyUsdPerSite: number;
+  alertThresholds: number[];
+  alertWebhookUrl: string;
+};
+
 type GlobalSettings = {
   pipeline?: {
     enqueueJitterSecMin?: number;
@@ -52,6 +59,12 @@ type GlobalSettings = {
     bodyLLMMax?: number;
     qaFixMax?: number;
     generateImagesOnlyOnQaPass?: boolean;
+  };
+  budgets?: {
+    dailyUsdTotal?: number;
+    dailyUsdPerSite?: number;
+    alertThresholds?: number[];
+    alertWebhookUrl?: string;
   };
   growth?: {
     minTrend30?: number;
@@ -68,7 +81,7 @@ type GlobalSettings = {
   };
 };
 
-const DEFAULTS: { pipeline: PipelineSettings; caps: CapsSettings; growth: GrowthSettings } = {
+const DEFAULTS: { pipeline: PipelineSettings; caps: CapsSettings; budgets: BudgetsSettings; growth: GrowthSettings } = {
   pipeline: {
     enqueueJitterSecMin: 120,
     enqueueJitterSecMax: 300,
@@ -82,6 +95,12 @@ const DEFAULTS: { pipeline: PipelineSettings; caps: CapsSettings; growth: Growth
     bodyLLMMax: 1,
     qaFixMax: 1,
     generateImagesOnlyOnQaPass: true
+  },
+  budgets: {
+    dailyUsdTotal: 0,
+    dailyUsdPerSite: 0,
+    alertThresholds: [0.8, 1.0],
+    alertWebhookUrl: ""
   },
   growth: {
     minTrend30: 20,
@@ -121,6 +140,11 @@ export default function SettingsPage() {
   const [qaFixMax, setQaFixMax] = useState(String(DEFAULTS.caps.qaFixMax));
   const [generateImagesOnlyOnQaPass, setGenerateImagesOnlyOnQaPass] = useState(DEFAULTS.caps.generateImagesOnlyOnQaPass);
 
+  const [dailyUsdTotal, setDailyUsdTotal] = useState(String(DEFAULTS.budgets.dailyUsdTotal));
+  const [dailyUsdPerSite, setDailyUsdPerSite] = useState(String(DEFAULTS.budgets.dailyUsdPerSite));
+  const [alertThresholds, setAlertThresholds] = useState(DEFAULTS.budgets.alertThresholds.join(","));
+  const [alertWebhookUrl, setAlertWebhookUrl] = useState(DEFAULTS.budgets.alertWebhookUrl);
+
   const [minTrend30, setMinTrend30] = useState(String(DEFAULTS.growth.minTrend30));
   const [minTrend7, setMinTrend7] = useState(String(DEFAULTS.growth.minTrend7));
   const [hotMomentumMin, setHotMomentumMin] = useState(String(DEFAULTS.growth.hotMomentumMin));
@@ -143,6 +167,7 @@ export default function SettingsPage() {
 
       const p = data.pipeline ?? {};
       const c = data.caps ?? {};
+      const b = data.budgets ?? {};
       const g = data.growth ?? {};
 
       setEnqueueJitterSecMin(String(p.enqueueJitterSecMin ?? DEFAULTS.pipeline.enqueueJitterSecMin));
@@ -156,6 +181,15 @@ export default function SettingsPage() {
       setBodyLLMMax(String(c.bodyLLMMax ?? DEFAULTS.caps.bodyLLMMax));
       setQaFixMax(String(c.qaFixMax ?? DEFAULTS.caps.qaFixMax));
       setGenerateImagesOnlyOnQaPass(Boolean(c.generateImagesOnlyOnQaPass ?? DEFAULTS.caps.generateImagesOnlyOnQaPass));
+
+      setDailyUsdTotal(String((b as any).dailyUsdTotal ?? DEFAULTS.budgets.dailyUsdTotal));
+      setDailyUsdPerSite(String((b as any).dailyUsdPerSite ?? DEFAULTS.budgets.dailyUsdPerSite));
+      setAlertThresholds(
+        Array.isArray((b as any).alertThresholds) && (b as any).alertThresholds.length > 0
+          ? (b as any).alertThresholds.join(",")
+          : DEFAULTS.budgets.alertThresholds.join(",")
+      );
+      setAlertWebhookUrl(String((b as any).alertWebhookUrl ?? DEFAULTS.budgets.alertWebhookUrl));
 
       setMinTrend30(String(g.minTrend30 ?? DEFAULTS.growth.minTrend30));
       setMinTrend7(String(g.minTrend7 ?? DEFAULTS.growth.minTrend7));
@@ -177,6 +211,12 @@ export default function SettingsPage() {
     const retryMax = Math.max(0, Math.floor(toNum(retrySameDayMax, DEFAULTS.pipeline.retrySameDayMax)));
     const retryDelay = Math.max(0, Math.floor(toNum(retryDelaySec, DEFAULTS.pipeline.retryDelaySec)));
 
+    const thresholds = String(alertThresholds ?? "")
+      .split(",")
+      .map((s) => Number(s.trim()))
+      .filter((n) => Number.isFinite(n) && n > 0)
+      .map((n) => Math.max(0, n));
+
     const out: GlobalSettings = {
       pipeline: {
         enqueueJitterSecMin: jitterMin,
@@ -191,6 +231,12 @@ export default function SettingsPage() {
         bodyLLMMax: Math.max(0, Math.floor(toNum(bodyLLMMax, DEFAULTS.caps.bodyLLMMax))),
         qaFixMax: Math.max(0, Math.floor(toNum(qaFixMax, DEFAULTS.caps.qaFixMax))),
         generateImagesOnlyOnQaPass
+      },
+      budgets: {
+        dailyUsdTotal: Math.max(0, toNum(dailyUsdTotal, DEFAULTS.budgets.dailyUsdTotal)),
+        dailyUsdPerSite: Math.max(0, toNum(dailyUsdPerSite, DEFAULTS.budgets.dailyUsdPerSite)),
+        alertThresholds: thresholds.length > 0 ? thresholds : DEFAULTS.budgets.alertThresholds,
+        alertWebhookUrl: String(alertWebhookUrl ?? "").trim()
       },
       growth: {
         minTrend30: Math.max(0, Math.floor(toNum(minTrend30, DEFAULTS.growth.minTrend30))),
@@ -218,6 +264,10 @@ export default function SettingsPage() {
     bodyLLMMax,
     qaFixMax,
     generateImagesOnlyOnQaPass,
+    dailyUsdTotal,
+    dailyUsdPerSite,
+    alertThresholds,
+    alertWebhookUrl,
     minTrend30,
     minTrend7,
     hotMomentumMin,
@@ -286,6 +336,17 @@ export default function SettingsPage() {
                   generateImagesOnlyOnQaPass
                 </label>
               </div>
+            </section>
+
+            <section className="rounded-xl border border-slate-200 p-4">
+              <h2 className="text-sm font-semibold text-slate-900">budgets</h2>
+              <div className="mt-3 grid gap-2 md:grid-cols-3">
+                <input className="h-10 rounded-md border border-slate-300 px-3 text-sm" inputMode="decimal" value={dailyUsdTotal} onChange={(e) => setDailyUsdTotal(e.target.value)} placeholder="dailyUsdTotal (0=disabled)" />
+                <input className="h-10 rounded-md border border-slate-300 px-3 text-sm" inputMode="decimal" value={dailyUsdPerSite} onChange={(e) => setDailyUsdPerSite(e.target.value)} placeholder="dailyUsdPerSite (0=disabled)" />
+                <input className="h-10 rounded-md border border-slate-300 px-3 text-sm" value={alertThresholds} onChange={(e) => setAlertThresholds(e.target.value)} placeholder="alertThresholds (e.g. 0.8,1.0)" />
+                <input className="h-10 rounded-md border border-slate-300 px-3 text-sm md:col-span-3" value={alertWebhookUrl} onChange={(e) => setAlertWebhookUrl(e.target.value)} placeholder="alertWebhookUrl (optional)" />
+              </div>
+              <p className="mt-2 text-xs text-slate-500">Budget hard-stop applies to LLM tasks only. Alerts are best-effort.</p>
             </section>
 
             <section className="rounded-xl border border-slate-200 p-4">

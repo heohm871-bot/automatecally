@@ -9,6 +9,7 @@ import { callOpenAiStructuredCached, MODEL_DEFAULT } from "../../lib/llm/openai"
 import { SCHEMA_VERSION, TitleJsonSchema, TitleOutZ } from "../../lib/llm/schemas";
 import { createHash } from "node:crypto";
 import { recordArticleLlmCost } from "../../lib/costAccounting";
+import { budgetCheckAndMaybeAlert } from "../../lib/budgets";
 
 type KeywordDoc = { text?: string };
 type ArticleDoc = { titleFinal?: string };
@@ -113,7 +114,16 @@ export async function titleGenerate(payload: TitleGeneratePayload) {
   const openAiEnabled = Boolean(process.env.OPENAI_API_KEY);
   const allowedByCaps = canUseLlm("title", llmUsage, settings.caps);
   const capExceeded = openAiEnabled && !allowedByCaps;
-  const useLlm = openAiEnabled && allowedByCaps;
+  const budget = openAiEnabled
+    ? await budgetCheckAndMaybeAlert({
+        siteId,
+        runDate: payload.runDate,
+        budgets: settings.budgets,
+        taskType: "title_generate"
+      })
+    : { enabled: false as const, stop: false, total: { cost: 0, limit: 0, ratio: 0 }, site: { cost: 0, limit: 0, ratio: 0 } };
+  const budgetExceeded = openAiEnabled && budget.enabled && budget.stop;
+  const useLlm = openAiEnabled && allowedByCaps && !budgetExceeded;
   const nextLlmUsage = useLlm ? bumpLlmUsage(llmUsage, "title") : llmUsage;
 
   let picked = candidates[0] ?? finalizeTitle(keyword, keyword);
@@ -249,6 +259,13 @@ export async function titleGenerate(payload: TitleGeneratePayload) {
     }
   });
 
+  if (budgetExceeded) {
+    return {
+      finalState: "skipped",
+      lastErrorCode: "BUDGET_EXCEEDED",
+      lastErrorMessage: "daily budget exceeded; LLM call skipped"
+    };
+  }
   if (capExceeded) {
     return {
       finalState: "skipped",
