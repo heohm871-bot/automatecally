@@ -75,8 +75,15 @@ jobs:
       - name: Deploy (Functions)
         if: inputs.deploy_functions
         env:
-          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
-        run: firebase deploy --project blog --only functions --token "$FIREBASE_TOKEN"
+            FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+        run: |
+            npx --yes firebase-tools@latest deploy \
+                --non-interactive \
+                --project digital-shelter-487211-v7 \
+                --only functions \
+                --token "$FIREBASE_TOKEN"
+
+
 
       - name: Deploy (Firestore indexes)
         if: inputs.deploy_indexes
