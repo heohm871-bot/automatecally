@@ -76,14 +76,14 @@ jobs:
         if: inputs.deploy_functions
         env:
           FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
-        run: firebase deploy --project blog --only functions --token "$FIREBASE_TOKEN"
+        run: npx --yes firebase-tools@latest deploy --non-interactive --project blog --only functions --token "$FIREBASE_TOKEN"
 
       - name: Deploy (Firestore indexes)
         if: inputs.deploy_indexes
         env:
           FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
-        run: firebase deploy --project blog --only firestore:indexes --token "$FIREBASE_TOKEN"
-
+        run: npx --yes firebase-tools@latest deploy --non-interactive --project blog --only functions --token "$FIREBASE_TOKEN"
+     
       - name: Post-deploy smoke (prod)
         env:
           OPS_FIREBASE_PROJECT_ID: blog-native-260212
