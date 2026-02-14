@@ -1,5 +1,11 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+## Prerequisites
+
+- Node.js **22** is required (CI and Firebase Functions runtime use Node 22).
+- Local dev: `nvm use` (reads `.nvmrc`) or install Node 22 manually.
+- If you see `npm WARN EBADENGINE`, you're likely running an older Node version.
+
 ## Getting Started
 
 First, run the development server:
