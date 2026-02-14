@@ -81,23 +81,37 @@ export async function routeTask(payload: AnyTaskPayload) {
   try {
     enforceProdRunTagPolicy(payload);
 
-    if (payload.taskType === "kw_collect") await kwCollect(payload);
-    else if (payload.taskType === "kw_score") await kwScore(payload);
-    else if (payload.taskType === "article_generate") await articleGenerate(payload);
-    else if (payload.taskType === "title_generate") await titleGenerate(payload);
-    else if (payload.taskType === "body_generate") await bodyGenerate(payload);
-    else if (payload.taskType === "article_qa") await articleQa(payload);
-    else if (payload.taskType === "article_qa_fix") await articleQaFix(payload);
-    else if (payload.taskType === "topcard_render") await topcardRender(payload);
-    else if (payload.taskType === "image_generate") await imageGenerate(payload);
-    else if (payload.taskType === "article_package") await articlePackage(payload);
-    else if (payload.taskType === "publish_execute") await publishExecute(payload);
-    else if (payload.taskType === "analyzer_daily") await analyzerDaily(payload);
-    else if (payload.taskType === "advisor_weekly_global") await advisorWeeklyGlobal(payload);
+    let result: unknown = undefined;
+    if (payload.taskType === "kw_collect") result = await kwCollect(payload);
+    else if (payload.taskType === "kw_score") result = await kwScore(payload);
+    else if (payload.taskType === "article_generate") result = await articleGenerate(payload);
+    else if (payload.taskType === "title_generate") result = await titleGenerate(payload);
+    else if (payload.taskType === "body_generate") result = await bodyGenerate(payload);
+    else if (payload.taskType === "article_qa") result = await articleQa(payload);
+    else if (payload.taskType === "article_qa_fix") result = await articleQaFix(payload);
+    else if (payload.taskType === "topcard_render") result = await topcardRender(payload);
+    else if (payload.taskType === "image_generate") result = await imageGenerate(payload);
+    else if (payload.taskType === "article_package") result = await articlePackage(payload);
+    else if (payload.taskType === "publish_execute") result = await publishExecute(payload);
+    else if (payload.taskType === "analyzer_daily") result = await analyzerDaily(payload);
+    else if (payload.taskType === "advisor_weekly_global") result = await advisorWeeklyGlobal(payload);
     else throw new Error("Unknown taskType");
 
     await runRef.set({ status: "success" }, { merge: true });
-    await recordTaskSnapshot(payload, "success", { durationMs: Date.now() - startedAt });
+    const meta = (result ?? {}) as { finalState?: unknown; lastErrorCode?: unknown; lastErrorMessage?: unknown };
+    const finalState = meta && typeof meta.finalState === "string" ? meta.finalState : "";
+    const lastErrorCode =
+      meta && typeof meta.lastErrorCode === "string" && meta.lastErrorCode.trim() ? meta.lastErrorCode.trim() : null;
+    const lastErrorMessage =
+      meta && typeof meta.lastErrorMessage === "string" && meta.lastErrorMessage.trim()
+        ? meta.lastErrorMessage.trim()
+        : null;
+    await recordTaskSnapshot(payload, "success", {
+      durationMs: Date.now() - startedAt,
+      ...(finalState ? { stateOverride: finalState } : {}),
+      ...(lastErrorCode ? { lastErrorCode } : {}),
+      ...(lastErrorMessage ? { lastErrorMessage } : {})
+    });
   } catch (err: unknown) {
     const errorText = String((err as { message?: string })?.message ?? err);
     await runRef.set(

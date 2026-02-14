@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { collection, limit, onSnapshot, orderBy, query, where } from "firebase/firestore";
+import { collection, doc, limit, onSnapshot, orderBy, query, where } from "firebase/firestore";
 import { AuthGuard } from "../../components/auth-guard";
 import { useAuth } from "../../components/auth-provider";
 import { getFirebaseDb } from "../../lib/firebaseClient";
@@ -25,9 +25,24 @@ type TaskRunRow = {
   queuedAt?: { seconds?: number };
 };
 
+type CostDailyDoc = {
+  estimatedTokens?: number;
+  estimatedCostUsd?: number;
+  llmCallCount?: number;
+  updatedAt?: { seconds?: number };
+};
+
 function todayIsoDate() {
   // Good enough for ops filter; server uses KST runDate.
   return new Date().toISOString().slice(0, 10);
+}
+
+function isoDayAdd(dayKey: string, deltaDays: number) {
+  const [y, m, d] = String(dayKey ?? "").split("-").map((x) => Number(x));
+  if (!y || !m || !d) return "";
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() + deltaDays);
+  return dt.toISOString().slice(0, 10);
 }
 
 function tsSeconds(v: { seconds?: number } | undefined) {
@@ -50,6 +65,10 @@ export default function OpsPage() {
   const [runDate, setRunDate] = useState(todayIsoDate());
   const [status, setStatus] = useState("all");
   const [rows, setRows] = useState<TaskRunRow[]>([]);
+  const [costToday, setCostToday] = useState<CostDailyDoc | null>(null);
+  const [costTodaySite, setCostTodaySite] = useState<CostDailyDoc | null>(null);
+  const [costPrev, setCostPrev] = useState<CostDailyDoc | null>(null);
+  const [costPrevSite, setCostPrevSite] = useState<CostDailyDoc | null>(null);
 
   useEffect(() => {
     const db = getFirebaseDb();
@@ -78,6 +97,40 @@ export default function OpsPage() {
     });
   }, [user, siteId, runDate]);
 
+  useEffect(() => {
+    const db = getFirebaseDb();
+    if (!db || !user || !siteId || !runDate) return;
+    const prev = isoDayAdd(runDate, -7);
+    const unsub: Array<() => void> = [];
+
+    unsub.push(
+      onSnapshot(doc(db, "costDaily", runDate), (snap) => {
+        setCostToday(snap.exists() ? (snap.data() as CostDailyDoc) : null);
+      })
+    );
+    unsub.push(
+      onSnapshot(doc(db, "costDaily", runDate, "sites", siteId), (snap) => {
+        setCostTodaySite(snap.exists() ? (snap.data() as CostDailyDoc) : null);
+      })
+    );
+    if (prev) {
+      unsub.push(
+        onSnapshot(doc(db, "costDaily", prev), (snap) => {
+          setCostPrev(snap.exists() ? (snap.data() as CostDailyDoc) : null);
+        })
+      );
+      unsub.push(
+        onSnapshot(doc(db, "costDaily", prev, "sites", siteId), (snap) => {
+          setCostPrevSite(snap.exists() ? (snap.data() as CostDailyDoc) : null);
+        })
+      );
+    } else {
+      setCostPrev(null);
+      setCostPrevSite(null);
+    }
+    return () => unsub.forEach((fn) => fn());
+  }, [user, siteId, runDate]);
+
   const filtered = useMemo(() => {
     if (status === "all") return rows;
     const want = status.trim().toLowerCase();
@@ -102,6 +155,24 @@ export default function OpsPage() {
       .slice(0, 5);
     return { counts, topErrors, retried };
   }, [rows]);
+
+  const costWidget = useMemo(() => {
+    const curTotal = typeof costToday?.estimatedCostUsd === "number" ? costToday.estimatedCostUsd : 0;
+    const curSite = typeof costTodaySite?.estimatedCostUsd === "number" ? costTodaySite.estimatedCostUsd : 0;
+    const prevTotal = typeof costPrev?.estimatedCostUsd === "number" ? costPrev.estimatedCostUsd : 0;
+    const prevSite = typeof costPrevSite?.estimatedCostUsd === "number" ? costPrevSite.estimatedCostUsd : 0;
+
+    const totalDelta = curTotal - prevTotal;
+    const siteDelta = curSite - prevSite;
+    return {
+      curTotal,
+      curSite,
+      totalDelta,
+      siteDelta,
+      curCalls: typeof costToday?.llmCallCount === "number" ? costToday.llmCallCount : 0,
+      curTokens: typeof costToday?.estimatedTokens === "number" ? costToday.estimatedTokens : 0
+    };
+  }, [costToday, costTodaySite, costPrev, costPrevSite]);
 
   return (
     <AuthGuard title="Ops">
@@ -174,6 +245,38 @@ export default function OpsPage() {
           </div>
         </div>
 
+        <div className="mt-4 grid gap-4 md:grid-cols-3">
+          <div className="rounded-lg border border-slate-200 bg-white p-4 md:col-span-3">
+            <p className="text-xs font-medium text-slate-500">Estimated LLM cost</p>
+            <div className="mt-2 grid gap-2 md:grid-cols-3">
+              <div className="rounded-md bg-slate-50 px-3 py-2">
+                <p className="text-xs text-slate-600">today(total)</p>
+                <p className="font-mono text-sm text-slate-900">${costWidget.curTotal.toFixed(4)}</p>
+                <p className={"text-xs " + (costWidget.totalDelta >= 0 ? "text-rose-700" : "text-emerald-700")}>
+                  vs -7d: {costWidget.totalDelta >= 0 ? "+" : ""}
+                  {costWidget.totalDelta.toFixed(4)}
+                </p>
+              </div>
+              <div className="rounded-md bg-slate-50 px-3 py-2">
+                <p className="text-xs text-slate-600">today(site)</p>
+                <p className="font-mono text-sm text-slate-900">${costWidget.curSite.toFixed(4)}</p>
+                <p className={"text-xs " + (costWidget.siteDelta >= 0 ? "text-rose-700" : "text-emerald-700")}>
+                  vs -7d: {costWidget.siteDelta >= 0 ? "+" : ""}
+                  {costWidget.siteDelta.toFixed(4)}
+                </p>
+              </div>
+              <div className="rounded-md bg-slate-50 px-3 py-2">
+                <p className="text-xs text-slate-600">today(activity)</p>
+                <p className="font-mono text-xs text-slate-700">llmCallCount: {costWidget.curCalls}</p>
+                <p className="font-mono text-xs text-slate-700">estimatedTokens: {costWidget.curTokens}</p>
+              </div>
+            </div>
+            <p className="mt-2 text-xs text-slate-600">
+              This is an estimate based on model token usage (no billing API).
+            </p>
+          </div>
+        </div>
+
         <div className="mt-6 overflow-hidden rounded-lg border border-slate-200 bg-white">
           <table className="w-full text-left text-sm">
             <thead className="bg-slate-50 text-xs text-slate-600">
@@ -231,4 +334,3 @@ export default function OpsPage() {
     </AuthGuard>
   );
 }
-

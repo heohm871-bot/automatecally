@@ -27,15 +27,34 @@ function getArticleId(payload: AnyTaskPayload): string | null {
 export async function recordTaskSnapshot(
   payload: AnyTaskPayload,
   status: TaskEventStatus,
-  args?: { error?: string; durationMs?: number }
+  args?: {
+    error?: string;
+    durationMs?: number;
+    stateOverride?: string;
+    lastErrorCode?: string | null;
+    lastErrorMessage?: string | null;
+  }
 ) {
   const now = new Date();
   const runRef = db().doc(`taskRuns/${payload.idempotencyKey}`);
 
   const attemptCount = payload.retryCount + 1;
   const errorText = String(args?.error ?? "").trim();
-  const lastErrorCode = status === "failed" ? extractErrorCode(errorText) : null;
-  const lastErrorMessage = status === "failed" ? (errorText || null) : null;
+  const inferredLastErrorCode = status === "failed" ? extractErrorCode(errorText) : null;
+  const inferredLastErrorMessage = status === "failed" ? (errorText || null) : null;
+  const lastErrorCode =
+    typeof args?.lastErrorCode === "string" && args.lastErrorCode.trim()
+      ? args.lastErrorCode.trim()
+      : args?.lastErrorCode === null
+        ? null
+        : inferredLastErrorCode;
+  const lastErrorMessage =
+    typeof args?.lastErrorMessage === "string" && args.lastErrorMessage.trim()
+      ? args.lastErrorMessage.trim()
+      : args?.lastErrorMessage === null
+        ? null
+        : inferredLastErrorMessage;
+  const state = typeof args?.stateOverride === "string" && args.stateOverride ? args.stateOverride : toState(status);
 
   await runRef.set(
     {
@@ -43,7 +62,7 @@ export async function recordTaskSnapshot(
       traceId: payload.traceId,
       taskType: payload.taskType,
       status,
-      state: toState(status),
+      state,
       retryCount: payload.retryCount,
       attemptCount,
       runDate: payload.runDate,
@@ -65,7 +84,7 @@ export async function recordTaskSnapshot(
     at: now.toISOString(),
     taskType: payload.taskType,
     status,
-    state: toState(status),
+    state,
     traceId: payload.traceId,
     idempotencyKey: payload.idempotencyKey,
     retryCount: payload.retryCount,
@@ -79,7 +98,7 @@ export async function recordTaskSnapshot(
     at: now.toISOString(),
     ok: status === "queued" || status === "running" ? null : status === "success",
     status,
-    state: toState(status),
+    state,
     traceId: payload.traceId,
     retryCount: payload.retryCount,
     attemptCount,

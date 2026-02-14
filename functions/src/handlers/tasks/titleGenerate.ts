@@ -8,6 +8,7 @@ import { canUseLlm, getLlmUsage, bumpLlmUsage } from "../../lib/llmUsage";
 import { callOpenAiStructuredCached, MODEL_DEFAULT } from "../../lib/llm/openai";
 import { SCHEMA_VERSION, TitleJsonSchema, TitleOutZ } from "../../lib/llm/schemas";
 import { createHash } from "node:crypto";
+import { recordArticleLlmCost } from "../../lib/costAccounting";
 
 type KeywordDoc = { text?: string };
 type ArticleDoc = { titleFinal?: string };
@@ -109,7 +110,10 @@ export async function titleGenerate(payload: TitleGeneratePayload) {
   const existingLifecycle = existingSnap.exists ? (existingSnap.get("lifecycle") as unknown) : undefined;
   const existingStatus = existingSnap.exists ? (existingSnap.get("status") as unknown) : undefined;
   const llmUsage = getLlmUsage(existing.llmUsage);
-  const useLlm = Boolean(process.env.OPENAI_API_KEY) && canUseLlm("title", llmUsage, settings.caps);
+  const openAiEnabled = Boolean(process.env.OPENAI_API_KEY);
+  const allowedByCaps = canUseLlm("title", llmUsage, settings.caps);
+  const capExceeded = openAiEnabled && !allowedByCaps;
+  const useLlm = openAiEnabled && allowedByCaps;
   const nextLlmUsage = useLlm ? bumpLlmUsage(llmUsage, "title") : llmUsage;
 
   let picked = candidates[0] ?? finalizeTitle(keyword, keyword);
@@ -157,7 +161,7 @@ export async function titleGenerate(payload: TitleGeneratePayload) {
     ].join("\n");
 
     try {
-      const { out } = await callOpenAiStructuredCached({
+      const { out, cacheHash, usage } = await callOpenAiStructuredCached({
         task: "title",
         normalizedRequest,
         schemaVersion: SCHEMA_VERSION,
@@ -169,6 +173,15 @@ export async function titleGenerate(payload: TitleGeneratePayload) {
         user,
         zod: TitleOutZ,
         ttlDays: 30
+      });
+
+      await recordArticleLlmCost({
+        siteId,
+        runDate: payload.runDate,
+        articleId,
+        cacheHash,
+        model: MODEL_DEFAULT,
+        usage
       });
 
       const llmTitle = finalizeTitle(out.title.trim(), keyword);
@@ -235,4 +248,12 @@ export async function titleGenerate(payload: TitleGeneratePayload) {
       articleId
     }
   });
+
+  if (capExceeded) {
+    return {
+      finalState: "skipped",
+      lastErrorCode: "CAP_EXCEEDED",
+      lastErrorMessage: "caps.titleLLMMax exceeded; LLM call skipped"
+    };
+  }
 }
