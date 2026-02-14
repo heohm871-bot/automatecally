@@ -8,7 +8,10 @@
     "start": "next start",
     "lint": "npm --prefix apps/web run lint && npm --prefix functions run lint",
     "test": "npm --prefix functions test && npm --prefix apps/web run build",
-    "e2e:once": "npm --prefix functions run e2e:once"
+    "e2e:once": "npm --prefix functions run e2e:once",
+    "ops:verify": "bash scripts/ops/verify.sh",
+    "ops:deploy:blog": "bash scripts/ops/deploy-blog.sh",
+    "ops:smoke:blog": "bash scripts/ops/smoke-blog.sh"
   },
   "dependencies": {
     "firebase-admin": "^13.6.1",
