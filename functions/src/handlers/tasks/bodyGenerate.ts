@@ -79,6 +79,7 @@ export async function bodyGenerate(payload: BodyGeneratePayload) {
 <hr />
 <h2 style="border-left:5px solid #d4af37; padding-left:15px; color:#333; line-height:1.4; margin-bottom:20px;">소제목 1</h2>
 <p>2~3문장 단락으로...</p>
+<!-- INTERNAL_LINKS_HOOK: insert "함께 보면 좋은 글" section here (optional) -->
 ${detailBlock}
 
 <hr />

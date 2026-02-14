@@ -4,6 +4,7 @@ import { getGlobalSettings } from "../../lib/globalSettings";
 import { nextSpecificWindowUtcMs, nextWindowUtcMs, parseHm } from "../../lib/publishSchedule";
 import { moderateArticleContent } from "../../lib/llm/moderation";
 import { enqueueTask } from "../../lib/tasks";
+import { computeAndStoreInternalLinks } from "../../lib/internalLinks";
 import type { ArticlePackagePayload } from "../schema";
 
 type ArticleDoc = {
@@ -12,6 +13,7 @@ type ArticleDoc = {
   hashtags12?: string[];
   images?: Array<Record<string, unknown>>;
   html?: string;
+  clusterId?: string;
 };
 
 type SiteDoc = {
@@ -154,6 +156,20 @@ export async function articlePackage(payload: ArticlePackagePayload) {
       },
       { merge: true }
     );
+
+  // Store internal link candidates for the editor/publisher UI.
+  // Keep it best-effort and non-blocking for packaging.
+  try {
+    await computeAndStoreInternalLinks({
+      siteId,
+      articleId,
+      clusterId: a.clusterId ?? null,
+      hashtags12: a.hashtags12 ?? null,
+      limit: 4
+    });
+  } catch {
+    // ignore
+  }
 
   // Schedule the actual publish execution as a separate task.
   // Manual mode: do nothing (operator triggers publish from console).
