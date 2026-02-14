@@ -3,6 +3,21 @@
 - 이 파일은 누적형 작업 인수인계 문서입니다.
 - 매 세션 마지막에는 반드시 이 파일에 최신 상태를 정리합니다.
 
+## 2026-02-14
+
+- Worklog: `docs/worklog/2026-02-14.md`
+- 배포(운영 반영):
+  - `firebase deploy --project blog --only functions` (내부 링크 + E2E 안정화 + `firebase-functions` 업그레이드 반영)
+  - `firebase deploy --project blog --only firestore:indexes` (SSOT 정리 후 인덱스 배포 완료)
+- 내부 링크 MVP:
+  - `articles/{id}.internalLinks[]`에 3~4개 자동 저장(동일 clusterId > keyword overlap > 최신성)
+  - 본문 템플릿에 `INTERNAL_LINKS_HOOK` 주석 추가(렌더 단계에서 섹션 삽입용)
+- 인프라(중요):
+  - `firebase.json`의 `firestore.indexes`가 더 이상 빈 `infra/firestore.indexes.datastore.json`을 보지 않도록
+    `infra/firestore.indexes.json`을 SSOT로 고정
+- 다음 세션 우선순위:
+  - Node 22 정책 정리(로컬/CI/setup-node)로 `EBADENGINE` 경고 제거
+
 ## 2026-02-13
 
 - Worklog: `docs/worklog/2026-02-13.md`
