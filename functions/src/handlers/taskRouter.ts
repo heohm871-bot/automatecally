@@ -18,6 +18,7 @@ import { kwScore } from "./tasks/kwScore";
 import { publishExecute } from "./tasks/publishExecute";
 import { titleGenerate } from "./tasks/titleGenerate";
 import { topcardRender } from "./tasks/topcardRender";
+import { kstDayKey } from "../../../packages/shared/kstDayKey";
 
 function getRuntimeEnv() {
   // Prefer an explicit APP_ENV; fall back to common local convention.
@@ -57,13 +58,7 @@ function enforceProdRunTagPolicy(payload: AnyTaskPayload) {
 }
 
 function todayKstDate() {
-  // "en-CA" reliably produces YYYY-MM-DD
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Seoul",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit"
-  }).format(new Date());
+  return kstDayKey(new Date());
 }
 
 export async function routeTask(payload: AnyTaskPayload) {

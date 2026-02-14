@@ -5,6 +5,7 @@ import { collection, doc, limit, onSnapshot, orderBy, query, where } from "fireb
 import { AuthGuard } from "../../components/auth-guard";
 import { useAuth } from "../../components/auth-provider";
 import { getFirebaseDb } from "../../lib/firebaseClient";
+import { kstDayKey } from "../../lib/kstDayKey";
 
 type SiteRow = { id: string; name?: string };
 
@@ -32,9 +33,8 @@ type CostDailyDoc = {
   updatedAt?: { seconds?: number };
 };
 
-function todayIsoDate() {
-  // Good enough for ops filter; server uses KST runDate.
-  return new Date().toISOString().slice(0, 10);
+function todayKstRunDate() {
+  return kstDayKey(new Date());
 }
 
 function isoDayAdd(dayKey: string, deltaDays: number) {
@@ -62,7 +62,7 @@ export default function OpsPage() {
   const { user } = useAuth();
   const [sites, setSites] = useState<SiteRow[]>([]);
   const [siteId, setSiteId] = useState("");
-  const [runDate, setRunDate] = useState(todayIsoDate());
+  const [runDate, setRunDate] = useState(todayKstRunDate());
   const [status, setStatus] = useState("all");
   const [rows, setRows] = useState<TaskRunRow[]>([]);
   const [costToday, setCostToday] = useState<CostDailyDoc | null>(null);
@@ -180,7 +180,9 @@ export default function OpsPage() {
         <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
           <div>
             <h1 className="text-xl font-semibold">Ops</h1>
-            <p className="text-sm text-slate-600">Task runs (by siteId/runDate). Read-only.</p>
+            <p className="text-sm text-slate-600">
+              Task runs (by siteId/runDate). Read-only. <span className="ml-1 rounded bg-slate-100 px-2 py-0.5 text-xs">runDate=KST</span>
+            </p>
           </div>
           <div className="flex flex-wrap gap-2 text-sm">
             <select
