@@ -115,7 +115,9 @@ export async function routeTask(payload: AnyTaskPayload) {
       durationMs: Date.now() - startedAt
     });
 
-    const retryLimit = Math.min(1, Math.max(0, settings.pipeline.retrySameDayMax));
+    // Guardrails: enforce fixed retry policy in code (same day only, max 1 retry, 30min delay).
+    const retryLimit = 1;
+    const retryDelaySec = 1800;
     const nonRetryable = errorText.startsWith("NON_RETRYABLE:");
     if (!nonRetryable && payload.retryCount < retryLimit) {
       // Only retry tasks for the same runDate (KST) to avoid stale retries crossing midnight.
@@ -130,7 +132,6 @@ export async function routeTask(payload: AnyTaskPayload) {
 
       const retryQueue =
         payload.taskType === "body_generate" || payload.taskType === "image_generate" ? "heavy" : "light";
-      const retryDelaySec = settings.pipeline.retryDelaySec;
       await enqueueTask({
         queue: retryQueue,
         scheduleTimeSecFromNow: retryDelaySec,

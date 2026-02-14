@@ -1,5 +1,6 @@
 import { CloudTasksClient } from "@google-cloud/tasks";
 import { createHash } from "node:crypto";
+import { recordTaskSnapshot } from "./pipelineTimeline";
 
 const client = new CloudTasksClient();
 
@@ -104,6 +105,7 @@ export async function enqueueTask(args: EnqueueArgs) {
     ]);
     const payload = AnyTaskPayloadSchema.parse(args.payload);
     assertIdempotencyKey(payload);
+    await recordTaskSnapshot(payload, "queued");
     const timeoutMs = Number(process.env.INLINE_TASK_TIMEOUT_MS ?? 45_000);
     await withTimeout(routeTask(payload), timeoutMs, "E2E_TASK_TIMEOUT", payload.taskType);
     return;
@@ -153,5 +155,14 @@ export async function enqueueTask(args: EnqueueArgs) {
   } catch (err: unknown) {
     if (args.ignoreAlreadyExists && isAlreadyExistsError(err)) return;
     throw err;
+  }
+
+  // Record queued after task creation succeeds to avoid leaving a "queued" run that never executes.
+  try {
+    const { AnyTaskPayloadSchema } = await import("../handlers/schema");
+    const payload = AnyTaskPayloadSchema.parse(args.payload);
+    await recordTaskSnapshot(payload, "queued");
+  } catch {
+    // best effort
   }
 }
